@@ -7,7 +7,9 @@ A high-performance quantum state vector simulator implemented in CUDA C++. This 
 - **GPU-Accelerated Simulation**: Full state vector simulation on NVIDIA GPUs
 - **Standard Gate Set**: X, Y, Z, H, S, T, S†, T†, Rx, Ry, Rz, CNOT, CZ, SWAP, Toffoli (CCX), CRY, CRZ
 - **Noise Models**: Depolarizing, amplitude damping (T1), phase damping (T2), bit flip, phase flip
+- **Density Matrix Simulation**: Exact mixed state simulation via Kraus operators (1-14 qubits)
 - **Batched Simulation**: Run multiple trajectories in parallel for Monte Carlo sampling
+- **Optimized Kernels**: Shared memory tiling and coalesced access patterns with auto-dispatch
 - **Measurement**: Single-qubit measurement with state collapse and multi-shot sampling
 - **Fluent Circuit API**: Chainable gate operations with input validation
 - **RAII Memory Management**: Safe GPU memory handling with automatic cleanup
@@ -163,6 +165,39 @@ auto histogram = batch.getHistogram();  // Counts for each basis state
 | Phase Flip | Z error with probability p | `noise.addPhaseFlip(p)` |
 | Bit-Phase Flip | Y error with probability p | `noise.addBitPhaseFlip(p)` |
 
+### Density Matrix Simulation
+
+For exact simulation of mixed states and noise (without Monte Carlo sampling), use the density matrix simulator:
+
+```cpp
+#include "DensityMatrix.cuh"
+using namespace qsim;
+
+// Create a 3-qubit density matrix simulator
+DensityMatrixSimulator sim(3);
+Circuit circuit(3);
+circuit.h(0).cnot(0, 1).cnot(1, 2);
+
+sim.run(circuit);
+
+// Apply exact noise channels (Kraus operators, not Monte Carlo)
+NoiseModel noise;
+noise.addDepolarizing(0.01);
+sim.applyNoise(noise);
+
+// Get probabilities and state properties
+auto probs = sim.getProbabilities();
+double purity = sim.getPurity();  // tr(rho^2), 1.0 for pure states
+```
+
+**When to use density matrix vs state vector:**
+
+| Approach | Memory | Use Case |
+|----------|--------|----------|
+| StateVector | O(2^n) | Pure states, large qubit counts (20+) |
+| NoisySimulator | O(2^n) | Noisy circuits, Monte Carlo sampling |
+| DensityMatrix | O(4^n) | Exact mixed states, small systems (1-14 qubits) |
+
 ## Architecture
 
 ### Core Components
@@ -174,6 +209,8 @@ include/
 ├── Circuit.hpp        # Circuit representation with fluent API
 ├── Simulator.hpp      # GPU simulator orchestration
 ├── NoiseModel.cuh     # Noise models and batched simulation
+├── DensityMatrix.cuh  # Density matrix simulation for mixed states
+├── OptimizedGates.cuh # Shared memory and coalesced access kernels
 ├── CudaMemory.cuh     # RAII wrapper for CUDA memory
 └── Constants.hpp      # Configuration and math constants
 
@@ -183,6 +220,8 @@ src/
 ├── Circuit.cpp        # Circuit builder
 ├── Simulator.cu       # GPU and CPU simulator implementations
 ├── NoiseModel.cu      # Noise model and batched simulator
+├── DensityMatrix.cu   # Density matrix implementation
+├── OptimizedGates.cu  # Optimized kernel implementations
 └── main.cpp           # Demo executable
 ```
 
@@ -232,6 +271,7 @@ The test suite uses Google Test and covers:
 | `test_gpu_cpu_equivalence` | GPU matches CPU reference |
 | `test_boundary` | Edge cases and error handling |
 | `test_noise` | Noise models and batched simulation |
+| `test_density_matrix` | Density matrix operations and noise channels |
 
 ```bash
 # Run all tests
@@ -265,11 +305,23 @@ State vector size = 2^n × 16 bytes (double precision complex):
 
 ## Future Work
 
-- [ ] Density matrix simulation for mixed states
-- [ ] Shared memory optimization for gate kernels
-- [ ] Coalesced memory access patterns
+- [x] Density matrix simulation for mixed states
+- [x] Shared memory optimization for gate kernels
+- [x] Coalesced memory access patterns
 - [ ] cuStateVec integration for comparison
 - [ ] Multi-GPU support
+
+### Optimization Benchmark Results
+
+The optimized kernels were benchmarked against the original implementations:
+
+| Optimization | Speedup | Notes |
+|-------------|---------|-------|
+| Shared memory tiling (target qubit 0) | 1.5x | Best case for low-order qubits |
+| Shared memory tiling (target qubits 1-7) | ~1.0x | L2 cache already effective |
+| Coalesced access patterns | 1.0-1.1x | Marginal improvement |
+
+**Finding:** Modern GPU memory hierarchies (RTX 4070 L2 cache, high bandwidth) already handle random access patterns efficiently. The original naive kernels were near-optimal for this hardware, demonstrating that simple implementations can be surprisingly performant on modern GPUs.
 
 ## License
 

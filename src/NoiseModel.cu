@@ -69,6 +69,31 @@ void NoiseModel::addPhaseDampingAll(int num_qubits, double gamma) {
     addPhaseDamping(all_qubits, gamma);
 }
 
+// Convenience overloads - global noise (empty qubits = applies to all)
+void NoiseModel::addDepolarizing(double probability) {
+    channels_.emplace_back(NoiseType::Depolarizing, std::vector<int>{}, probability);
+}
+
+void NoiseModel::addAmplitudeDamping(double gamma) {
+    channels_.emplace_back(NoiseType::AmplitudeDamping, std::vector<int>{}, gamma);
+}
+
+void NoiseModel::addPhaseDamping(double gamma) {
+    channels_.emplace_back(NoiseType::PhaseDamping, std::vector<int>{}, gamma);
+}
+
+void NoiseModel::addBitFlip(double probability) {
+    channels_.emplace_back(NoiseType::BitFlip, std::vector<int>{}, probability);
+}
+
+void NoiseModel::addPhaseFlip(double probability) {
+    channels_.emplace_back(NoiseType::PhaseFlip, std::vector<int>{}, probability);
+}
+
+void NoiseModel::addBitPhaseFlip(double probability) {
+    channels_.emplace_back(NoiseType::BitPhaseFlip, std::vector<int>{}, probability);
+}
+
 // ============================================================================
 // CUDA Kernels for Noise Application
 // ============================================================================

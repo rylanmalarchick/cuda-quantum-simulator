@@ -48,6 +48,8 @@ add_library(quantum_sim_lib STATIC
     src/Circuit.cpp
     src/Simulator.cu
     src/NoiseModel.cu
+    src/DensityMatrix.cu
+    src/OptimizedGates.cu
 )
 
 target_link_libraries(quantum_sim_lib
@@ -114,6 +116,11 @@ add_executable(test_noise tests/test_noise.cu)
 target_link_libraries(test_noise quantum_sim_lib GTest::gtest_main)
 add_test(NAME NoiseTest COMMAND test_noise)
 
+# Density matrix tests
+add_executable(test_density_matrix tests/test_density_matrix.cu)
+target_link_libraries(test_density_matrix quantum_sim_lib GTest::gtest_main)
+add_test(NAME DensityMatrixTest COMMAND test_density_matrix)
+
 # ============================================================================
 # Benchmarks
 # ============================================================================
@@ -125,3 +132,6 @@ target_link_libraries(benchmark_scaling quantum_sim_lib cudart)
 
 add_executable(benchmark_hadamard benchmarks/benchmark_hadamard.cu)
 target_link_libraries(benchmark_hadamard quantum_sim_lib cudart)
+
+add_executable(benchmark_optimized benchmarks/benchmark_optimized.cu)
+target_link_libraries(benchmark_optimized quantum_sim_lib cudart)

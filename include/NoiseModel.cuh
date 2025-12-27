@@ -7,6 +7,7 @@
 #include <complex>
 #include <memory>
 #include <random>
+#include <algorithm>
 
 namespace qsim {
 
@@ -66,6 +67,15 @@ public:
     void addPhaseFlip(const std::vector<int>& qubits, double probability);
     void addBitPhaseFlip(const std::vector<int>& qubits, double probability);
     
+    // Convenience: add global noise (applies to all qubits automatically)
+    // These store with empty qubits vector meaning "apply to all"
+    void addDepolarizing(double probability);
+    void addAmplitudeDamping(double gamma);
+    void addPhaseDamping(double gamma);
+    void addBitFlip(double probability);
+    void addPhaseFlip(double probability);
+    void addBitPhaseFlip(double probability);
+    
     // Convenience: add same noise to all qubits
     void addDepolarizingAll(int num_qubits, double probability);
     void addAmplitudeDampingAll(int num_qubits, double gamma);
@@ -75,6 +85,12 @@ public:
     const std::vector<NoiseChannel>& getChannels() const { return channels_; }
     bool hasNoise() const { return !channels_.empty(); }
     void clear() { channels_.clear(); }
+    
+    // Check if a channel applies to a specific qubit
+    bool channelAppliesToQubit(const NoiseChannel& channel, int qubit) const {
+        return channel.qubits.empty() || 
+               std::find(channel.qubits.begin(), channel.qubits.end(), qubit) != channel.qubits.end();
+    }
     
 private:
     std::vector<NoiseChannel> channels_;
