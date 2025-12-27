@@ -135,3 +135,23 @@ target_link_libraries(benchmark_hadamard quantum_sim_lib cudart)
 
 add_executable(benchmark_optimized benchmarks/benchmark_optimized.cu)
 target_link_libraries(benchmark_optimized quantum_sim_lib cudart)
+
+# cuStateVec comparison benchmark (requires cuQuantum SDK)
+# Look for cuStateVec in pip-installed location
+set(CUQUANTUM_ROOT "$ENV{HOME}/.local/lib/python3.12/site-packages/cuquantum")
+if(EXISTS "${CUQUANTUM_ROOT}/include/custatevec.h")
+    message(STATUS "Found cuQuantum at: ${CUQUANTUM_ROOT}")
+    
+    add_executable(benchmark_custatevec benchmarks/benchmark_custatevec.cu)
+    target_include_directories(benchmark_custatevec PRIVATE ${CUQUANTUM_ROOT}/include)
+    target_link_directories(benchmark_custatevec PRIVATE ${CUQUANTUM_ROOT}/lib)
+    target_link_libraries(benchmark_custatevec quantum_sim_lib cudart custatevec)
+    
+    # Set RPATH so the executable can find the library at runtime
+    set_target_properties(benchmark_custatevec PROPERTIES
+        BUILD_RPATH "${CUQUANTUM_ROOT}/lib"
+        INSTALL_RPATH "${CUQUANTUM_ROOT}/lib"
+    )
+else()
+    message(STATUS "cuQuantum not found - skipping benchmark_custatevec")
+endif()
