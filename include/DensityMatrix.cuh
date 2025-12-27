@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: MIT
+// Copyright (c) 2024 Rylan Malarchick
+
 /**
  * @file DensityMatrix.cuh
  * @brief Density matrix representation for mixed quantum state simulation

@@ -1,5 +1,10 @@
+// SPDX-License-Identifier: MIT
+// Copyright (c) 2024 Rylan Malarchick
+
 #include "OptimizedGates.cuh"
+
 #include <cuda_runtime.h>
+
 #include <cmath>
 
 namespace qsim {

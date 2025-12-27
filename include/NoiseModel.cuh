@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: MIT
+// Copyright (c) 2024 Rylan Malarchick
+
 /**
  * @file NoiseModel.cuh
  * @brief Noise models and noisy simulation for quantum circuits
@@ -33,6 +36,7 @@
 #include <memory>
 #include <random>
 #include <algorithm>
+#include "CudaMemory.cuh"
 
 namespace qsim {
 
@@ -136,7 +140,13 @@ class NoisySimulator {
 public:
     NoisySimulator(int num_qubits, const NoiseModel& noise_model);
     NoisySimulator(int num_qubits);  // No noise (equivalent to regular Simulator)
-    ~NoisySimulator() noexcept;
+    ~NoisySimulator() noexcept = default;
+    
+    // Disable copy, enable move
+    NoisySimulator(const NoisySimulator&) = delete;
+    NoisySimulator& operator=(const NoisySimulator&) = delete;
+    NoisySimulator(NoisySimulator&&) noexcept = default;
+    NoisySimulator& operator=(NoisySimulator&&) noexcept = default;
     
     // Set/update noise model
     void setNoiseModel(const NoiseModel& noise_model);
@@ -173,7 +183,7 @@ public:
 private:
     int num_qubits_;
     size_t size_;
-    cuDoubleComplex* d_state_;
+    CudaMemory<cuDoubleComplex> d_state_;
     NoiseModel noise_model_;
     
     // Random number generation
@@ -181,11 +191,9 @@ private:
     std::uniform_real_distribution<double> uniform_dist_;
     
     // CUDA random states for GPU-based noise
-    curandState* d_rng_states_;
+    CudaMemory<curandState> d_rng_states_;
     bool rng_initialized_;
     
-    void allocate();
-    void deallocate();
     void initializeRNG(unsigned int seed);
     
     // Apply specific noise types
@@ -224,11 +232,13 @@ class BatchedSimulator {
 public:
     BatchedSimulator(int num_qubits, int batch_size);
     BatchedSimulator(int num_qubits, int batch_size, const NoiseModel& noise_model);
-    ~BatchedSimulator() noexcept;
+    ~BatchedSimulator() noexcept = default;
     
-    // Disable copy
+    // Disable copy, enable move
     BatchedSimulator(const BatchedSimulator&) = delete;
     BatchedSimulator& operator=(const BatchedSimulator&) = delete;
+    BatchedSimulator(BatchedSimulator&&) noexcept = default;
+    BatchedSimulator& operator=(BatchedSimulator&&) noexcept = default;
     
     // Set noise model for all trajectories
     void setNoiseModel(const NoiseModel& noise_model);
@@ -268,16 +278,14 @@ private:
     
     // Batched state: [batch_size * 2^n] contiguous array
     // Layout: trajectory 0 states, trajectory 1 states, ...
-    cuDoubleComplex* d_states_;
+    CudaMemory<cuDoubleComplex> d_states_;
     
     NoiseModel noise_model_;
     
     // RNG
     std::mt19937 rng_;
-    curandState* d_rng_states_;
+    CudaMemory<curandState> d_rng_states_;
     
-    void allocate();
-    void deallocate();
     void initializeRNG(unsigned int seed);
     
     // Batched gate application

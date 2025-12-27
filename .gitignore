@@ -25,9 +25,10 @@ test_gpu_cpu_equivalence
 test_boundary
 benchmark_*
 
-# IDE
+# IDE and tool caches
 .idea/
 .vscode/
+.cache/
 *.swp
 *.swo
 *~

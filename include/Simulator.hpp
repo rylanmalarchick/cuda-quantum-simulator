@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: MIT
+// Copyright (c) 2024 Rylan Malarchick
+
 /**
  * @file Simulator.hpp
  * @brief Main quantum circuit simulator orchestrating GPU execution

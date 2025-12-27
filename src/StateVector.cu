@@ -1,13 +1,19 @@
+// SPDX-License-Identifier: MIT
+// Copyright (c) 2024 Rylan Malarchick
+
 #include "StateVector.cuh"
+
 #include "Constants.hpp"
 #include "CudaMemory.cuh"
+
 #include <cuda_runtime.h>
 #include <curand.h>
-#include <stdexcept>
-#include <cstring>
-#include <random>
-#include <numeric>
+
 #include <algorithm>
+#include <cstring>
+#include <numeric>
+#include <random>
+#include <stdexcept>
 
 namespace qsim {
 

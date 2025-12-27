@@ -1,13 +1,19 @@
+// SPDX-License-Identifier: MIT
+// Copyright (c) 2024 Rylan Malarchick
+
 #include "NoiseModel.cuh"
-#include "Gates.cuh"
+
 #include "Circuit.hpp"
 #include "Constants.hpp"
+#include "Gates.cuh"
+
 #include <cuda_runtime.h>
 #include <curand_kernel.h>
-#include <stdexcept>
-#include <cmath>
+
 #include <algorithm>
+#include <cmath>
 #include <numeric>
+#include <stdexcept>
 
 namespace qsim {
 
@@ -314,14 +320,13 @@ __global__ void applyPhaseDampingKernel(cuDoubleComplex* state, int n_qubits, in
 NoisySimulator::NoisySimulator(int num_qubits, const NoiseModel& noise_model)
     : num_qubits_(num_qubits)
     , size_(1ULL << num_qubits)
-    , d_state_(nullptr)
+    , d_state_(size_)
     , noise_model_(noise_model)
     , rng_(std::random_device{}())
     , uniform_dist_(0.0, 1.0)
-    , d_rng_states_(nullptr)
+    , d_rng_states_(size_ / 2)
     , rng_initialized_(false)
 {
-    allocate();
     reset();
     initializeRNG(rng_());
 }
@@ -331,35 +336,12 @@ NoisySimulator::NoisySimulator(int num_qubits)
 {
 }
 
-NoisySimulator::~NoisySimulator() noexcept {
-    deallocate();
-}
-
-void NoisySimulator::allocate() {
-    CUDA_CHECK(cudaMalloc(&d_state_, size_ * sizeof(cuDoubleComplex)));
-    
-    // Allocate RNG states - one per pair for largest possible operation
-    size_t n_rng_states = size_ / 2;
-    CUDA_CHECK(cudaMalloc(&d_rng_states_, n_rng_states * sizeof(curandState)));
-}
-
-void NoisySimulator::deallocate() {
-    if (d_state_) {
-        cudaFree(d_state_);
-        d_state_ = nullptr;
-    }
-    if (d_rng_states_) {
-        cudaFree(d_rng_states_);
-        d_rng_states_ = nullptr;
-    }
-}
-
 void NoisySimulator::initializeRNG(unsigned int seed) {
     size_t n_states = size_ / 2;
     int threads = cuda_config::DEFAULT_BLOCK_SIZE;
     int blocks = (n_states + threads - 1) / threads;
     
-    initRNGKernel<<<blocks, threads>>>(d_rng_states_, seed, n_states);
+    initRNGKernel<<<blocks, threads>>>(d_rng_states_.get(), seed, n_states);
     CUDA_CHECK_LAST_ERROR();
     CUDA_CHECK(cudaDeviceSynchronize());
     
@@ -377,11 +359,11 @@ void NoisySimulator::setNoiseModel(const NoiseModel& noise_model) {
 
 void NoisySimulator::reset() {
     // Initialize to |0...0⟩
-    CUDA_CHECK(cudaMemset(d_state_, 0, size_ * sizeof(cuDoubleComplex)));
+    CUDA_CHECK(cudaMemset(d_state_.get(), 0, size_ * sizeof(cuDoubleComplex)));
     
     // Set first element to 1
     cuDoubleComplex one = make_cuDoubleComplex(1.0, 0.0);
-    CUDA_CHECK(cudaMemcpy(d_state_, &one, sizeof(cuDoubleComplex), cudaMemcpyHostToDevice));
+    CUDA_CHECK(cudaMemcpy(d_state_.get(), &one, sizeof(cuDoubleComplex), cudaMemcpyHostToDevice));
 }
 
 void NoisySimulator::run(const Circuit& circuit) {
@@ -418,37 +400,37 @@ void NoisySimulator::launchSingleQubitGate(int gate_type, int target, double par
     
     switch (type) {
         case GateType::X:
-            applyX<<<blocks, threads>>>(d_state_, num_qubits_, target);
+            applyX<<<blocks, threads>>>(d_state_.get(), num_qubits_, target);
             break;
         case GateType::Y:
-            applyY<<<blocks, threads>>>(d_state_, num_qubits_, target);
+            applyY<<<blocks, threads>>>(d_state_.get(), num_qubits_, target);
             break;
         case GateType::Z:
-            applyZ<<<blocks, threads>>>(d_state_, num_qubits_, target);
+            applyZ<<<blocks, threads>>>(d_state_.get(), num_qubits_, target);
             break;
         case GateType::H:
-            applyH<<<blocks, threads>>>(d_state_, num_qubits_, target);
+            applyH<<<blocks, threads>>>(d_state_.get(), num_qubits_, target);
             break;
         case GateType::S:
-            applyS<<<blocks, threads>>>(d_state_, num_qubits_, target);
+            applyS<<<blocks, threads>>>(d_state_.get(), num_qubits_, target);
             break;
         case GateType::T:
-            applyT<<<blocks, threads>>>(d_state_, num_qubits_, target);
+            applyT<<<blocks, threads>>>(d_state_.get(), num_qubits_, target);
             break;
         case GateType::Sdag:
-            applySdag<<<blocks, threads>>>(d_state_, num_qubits_, target);
+            applySdag<<<blocks, threads>>>(d_state_.get(), num_qubits_, target);
             break;
         case GateType::Tdag:
-            applyTdag<<<blocks, threads>>>(d_state_, num_qubits_, target);
+            applyTdag<<<blocks, threads>>>(d_state_.get(), num_qubits_, target);
             break;
         case GateType::Rx:
-            applyRx<<<blocks, threads>>>(d_state_, num_qubits_, target, param);
+            applyRx<<<blocks, threads>>>(d_state_.get(), num_qubits_, target, param);
             break;
         case GateType::Ry:
-            applyRy<<<blocks, threads>>>(d_state_, num_qubits_, target, param);
+            applyRy<<<blocks, threads>>>(d_state_.get(), num_qubits_, target, param);
             break;
         case GateType::Rz:
-            applyRz<<<blocks, threads>>>(d_state_, num_qubits_, target, param);
+            applyRz<<<blocks, threads>>>(d_state_.get(), num_qubits_, target, param);
             break;
         default:
             throw std::runtime_error("Unknown single-qubit gate type");
@@ -466,19 +448,19 @@ void NoisySimulator::launchTwoQubitGate(int gate_type, int qubit1, int qubit2, d
     
     switch (type) {
         case GateType::CNOT:
-            applyCNOT<<<blocks, threads>>>(d_state_, num_qubits_, qubit1, qubit2);
+            applyCNOT<<<blocks, threads>>>(d_state_.get(), num_qubits_, qubit1, qubit2);
             break;
         case GateType::CZ:
-            applyCZ<<<blocks, threads>>>(d_state_, num_qubits_, qubit1, qubit2);
+            applyCZ<<<blocks, threads>>>(d_state_.get(), num_qubits_, qubit1, qubit2);
             break;
         case GateType::CRY:
-            applyCRY<<<blocks, threads>>>(d_state_, num_qubits_, qubit1, qubit2, param);
+            applyCRY<<<blocks, threads>>>(d_state_.get(), num_qubits_, qubit1, qubit2, param);
             break;
         case GateType::CRZ:
-            applyCRZ<<<blocks, threads>>>(d_state_, num_qubits_, qubit1, qubit2, param);
+            applyCRZ<<<blocks, threads>>>(d_state_.get(), num_qubits_, qubit1, qubit2, param);
             break;
         case GateType::SWAP:
-            applySWAP<<<blocks, threads>>>(d_state_, num_qubits_, qubit1, qubit2);
+            applySWAP<<<blocks, threads>>>(d_state_.get(), num_qubits_, qubit1, qubit2);
             break;
         default:
             throw std::runtime_error("Unknown two-qubit gate type");
@@ -496,7 +478,7 @@ void NoisySimulator::launchThreeQubitGate(int gate_type, int qubit1, int qubit2,
     
     switch (type) {
         case GateType::Toffoli:
-            applyToffoli<<<blocks, threads>>>(d_state_, num_qubits_, qubit1, qubit2, qubit3);
+            applyToffoli<<<blocks, threads>>>(d_state_.get(), num_qubits_, qubit1, qubit2, qubit3);
             break;
         default:
             throw std::runtime_error("Unknown three-qubit gate type");
@@ -539,7 +521,7 @@ void NoisySimulator::applyDepolarizing(int qubit, double p) {
     int threads = cuda_config::DEFAULT_BLOCK_SIZE;
     int blocks = calcBlocks(n_pairs, threads);
     
-    applyDepolarizingKernel<<<blocks, threads>>>(d_state_, num_qubits_, qubit, p, d_rng_states_);
+    applyDepolarizingKernel<<<blocks, threads>>>(d_state_.get(), num_qubits_, qubit, p, d_rng_states_.get());
     CUDA_CHECK_LAST_ERROR();
 }
 
@@ -548,7 +530,7 @@ void NoisySimulator::applyAmplitudeDamping(int qubit, double gamma) {
     int threads = cuda_config::DEFAULT_BLOCK_SIZE;
     int blocks = calcBlocks(n_pairs, threads);
     
-    applyAmplitudeDampingKernel<<<blocks, threads>>>(d_state_, num_qubits_, qubit, gamma, d_rng_states_);
+    applyAmplitudeDampingKernel<<<blocks, threads>>>(d_state_.get(), num_qubits_, qubit, gamma, d_rng_states_.get());
     CUDA_CHECK_LAST_ERROR();
 }
 
@@ -557,7 +539,7 @@ void NoisySimulator::applyPhaseDamping(int qubit, double gamma) {
     int threads = cuda_config::DEFAULT_BLOCK_SIZE;
     int blocks = calcBlocks(n_pairs, threads);
     
-    applyPhaseDampingKernel<<<blocks, threads>>>(d_state_, num_qubits_, qubit, gamma, d_rng_states_);
+    applyPhaseDampingKernel<<<blocks, threads>>>(d_state_.get(), num_qubits_, qubit, gamma, d_rng_states_.get());
     CUDA_CHECK_LAST_ERROR();
 }
 
@@ -566,7 +548,7 @@ void NoisySimulator::applyBitFlip(int qubit, double p) {
     int threads = cuda_config::DEFAULT_BLOCK_SIZE;
     int blocks = calcBlocks(n_pairs, threads);
     
-    applyBitFlipKernel<<<blocks, threads>>>(d_state_, num_qubits_, qubit, p, d_rng_states_);
+    applyBitFlipKernel<<<blocks, threads>>>(d_state_.get(), num_qubits_, qubit, p, d_rng_states_.get());
     CUDA_CHECK_LAST_ERROR();
 }
 
@@ -575,7 +557,7 @@ void NoisySimulator::applyPhaseFlip(int qubit, double p) {
     int threads = cuda_config::DEFAULT_BLOCK_SIZE;
     int blocks = calcBlocks(n_pairs, threads);
     
-    applyPhaseFlipKernel<<<blocks, threads>>>(d_state_, num_qubits_, qubit, p, d_rng_states_);
+    applyPhaseFlipKernel<<<blocks, threads>>>(d_state_.get(), num_qubits_, qubit, p, d_rng_states_.get());
     CUDA_CHECK_LAST_ERROR();
 }
 
@@ -584,7 +566,7 @@ void NoisySimulator::applyBitPhaseFlip(int qubit, double p) {
     int threads = cuda_config::DEFAULT_BLOCK_SIZE;
     int blocks = calcBlocks(n_pairs, threads);
     
-    applyBitPhaseFlipKernel<<<blocks, threads>>>(d_state_, num_qubits_, qubit, p, d_rng_states_);
+    applyBitPhaseFlipKernel<<<blocks, threads>>>(d_state_.get(), num_qubits_, qubit, p, d_rng_states_.get());
     CUDA_CHECK_LAST_ERROR();
 }
 
@@ -598,7 +580,7 @@ std::vector<std::complex<double>> NoisySimulator::getStateVector() const {
     CUDA_CHECK(cudaDeviceSynchronize());
     
     std::vector<std::complex<double>> host_state(size_);
-    CUDA_CHECK(cudaMemcpy(host_state.data(), d_state_, 
+    CUDA_CHECK(cudaMemcpy(host_state.data(), d_state_.get(), 
                           size_ * sizeof(cuDoubleComplex), cudaMemcpyDeviceToHost));
     return host_state;
 }
@@ -662,7 +644,7 @@ int NoisySimulator::measureQubit(int qubit) {
     }
     
     // Copy back to device
-    CUDA_CHECK(cudaMemcpy(d_state_, state.data(), 
+    CUDA_CHECK(cudaMemcpy(d_state_.get(), state.data(), 
                           size_ * sizeof(cuDoubleComplex), cudaMemcpyHostToDevice));
     
     return result;
@@ -676,11 +658,10 @@ BatchedSimulator::BatchedSimulator(int num_qubits, int batch_size)
     : num_qubits_(num_qubits)
     , batch_size_(batch_size)
     , state_size_(1ULL << num_qubits)
-    , d_states_(nullptr)
-    , d_rng_states_(nullptr)
+    , d_states_(batch_size * (1ULL << num_qubits))
+    , d_rng_states_(batch_size * ((1ULL << num_qubits) / 2))
     , rng_(std::random_device{}())
 {
-    allocate();
     reset();
     initializeRNG(rng_());
 }
@@ -691,36 +672,12 @@ BatchedSimulator::BatchedSimulator(int num_qubits, int batch_size, const NoiseMo
     noise_model_ = noise_model;
 }
 
-BatchedSimulator::~BatchedSimulator() noexcept {
-    deallocate();
-}
-
-void BatchedSimulator::allocate() {
-    size_t total_size = batch_size_ * state_size_;
-    CUDA_CHECK(cudaMalloc(&d_states_, total_size * sizeof(cuDoubleComplex)));
-    
-    // RNG states - one per pair per trajectory
-    size_t n_rng_states = batch_size_ * (state_size_ / 2);
-    CUDA_CHECK(cudaMalloc(&d_rng_states_, n_rng_states * sizeof(curandState)));
-}
-
-void BatchedSimulator::deallocate() {
-    if (d_states_) {
-        cudaFree(d_states_);
-        d_states_ = nullptr;
-    }
-    if (d_rng_states_) {
-        cudaFree(d_rng_states_);
-        d_rng_states_ = nullptr;
-    }
-}
-
 void BatchedSimulator::initializeRNG(unsigned int seed) {
     size_t n_states = batch_size_ * (state_size_ / 2);
     int threads = cuda_config::DEFAULT_BLOCK_SIZE;
     int blocks = (n_states + threads - 1) / threads;
     
-    initRNGKernel<<<blocks, threads>>>(d_rng_states_, seed, n_states);
+    initRNGKernel<<<blocks, threads>>>(d_rng_states_.get(), seed, n_states);
     CUDA_CHECK_LAST_ERROR();
     CUDA_CHECK(cudaDeviceSynchronize());
 }
@@ -751,7 +708,7 @@ void BatchedSimulator::reset() {
     int threads = cuda_config::DEFAULT_BLOCK_SIZE;
     int blocks = (total_size + threads - 1) / threads;
     
-    initBatchedZeroKernel<<<blocks, threads>>>(d_states_, state_size_, batch_size_);
+    initBatchedZeroKernel<<<blocks, threads>>>(d_states_.get(), state_size_, batch_size_);
     CUDA_CHECK_LAST_ERROR();
     CUDA_CHECK(cudaDeviceSynchronize());
 }
@@ -813,7 +770,7 @@ void BatchedSimulator::launchBatchedSingleQubitGate(int gate_type, int target, d
     int threads = cuda_config::DEFAULT_BLOCK_SIZE;
     int blocks = (total_pairs + threads - 1) / threads;
     
-    applyBatchedSingleQubitGate<<<blocks, threads>>>(d_states_, num_qubits_, target,
+    applyBatchedSingleQubitGate<<<blocks, threads>>>(d_states_.get(), num_qubits_, target,
                                                       batch_size_, gate_type, param);
     CUDA_CHECK_LAST_ERROR();
 }
@@ -850,7 +807,7 @@ void BatchedSimulator::launchBatchedTwoQubitGate(int gate_type, int qubit1, int 
     
     // For now, only CNOT implemented
     if (gate_type == static_cast<int>(GateType::CNOT)) {
-        applyBatchedCNOT<<<blocks, threads>>>(d_states_, num_qubits_, qubit1, qubit2, batch_size_);
+        applyBatchedCNOT<<<blocks, threads>>>(d_states_.get(), num_qubits_, qubit1, qubit2, batch_size_);
     }
     CUDA_CHECK_LAST_ERROR();
 }
@@ -925,8 +882,8 @@ void BatchedSimulator::applyBatchedNoise() {
                 int blocks = (total_pairs + threads - 1) / threads;
                 
                 applyBatchedDepolarizingKernel<<<blocks, threads>>>(
-                    d_states_, num_qubits_, qubit, channel.probability,
-                    batch_size_, d_rng_states_);
+                    d_states_.get(), num_qubits_, qubit, channel.probability,
+                    batch_size_, d_rng_states_.get());
             }
         }
         // Add other noise types as needed
@@ -939,7 +896,7 @@ std::vector<double> BatchedSimulator::getAverageProbabilities() const {
     
     size_t total_size = batch_size_ * state_size_;
     std::vector<cuDoubleComplex> all_states(total_size);
-    CUDA_CHECK(cudaMemcpy(all_states.data(), d_states_, 
+    CUDA_CHECK(cudaMemcpy(all_states.data(), d_states_.get(), 
                           total_size * sizeof(cuDoubleComplex), cudaMemcpyDeviceToHost));
     
     std::vector<double> avg_probs(state_size_, 0.0);
@@ -965,7 +922,7 @@ std::vector<double> BatchedSimulator::getProbabilities(int trajectory_idx) const
     
     std::vector<cuDoubleComplex> state(state_size_);
     size_t offset = trajectory_idx * state_size_;
-    CUDA_CHECK(cudaMemcpy(state.data(), d_states_ + offset,
+    CUDA_CHECK(cudaMemcpy(state.data(), d_states_.get() + offset,
                           state_size_ * sizeof(cuDoubleComplex), cudaMemcpyDeviceToHost));
     
     std::vector<double> probs(state_size_);

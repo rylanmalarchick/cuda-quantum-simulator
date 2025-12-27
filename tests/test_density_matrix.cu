@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: MIT
+// Copyright (c) 2024 Rylan Malarchick
+
 #include <gtest/gtest.h>
 #include <cmath>
 #include <complex>

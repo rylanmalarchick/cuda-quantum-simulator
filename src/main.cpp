@@ -1,6 +1,10 @@
-#include <iostream>
-#include <iomanip>
+// SPDX-License-Identifier: MIT
+// Copyright (c) 2024 Rylan Malarchick
+
 #include "Simulator.hpp"
+
+#include <iomanip>
+#include <iostream>
 
 using namespace qsim;
 

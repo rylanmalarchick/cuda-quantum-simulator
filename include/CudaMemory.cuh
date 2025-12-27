@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: MIT
+// Copyright (c) 2024 Rylan Malarchick
+
 /**
  * @file CudaMemory.cuh
  * @brief RAII wrapper for CUDA device memory management

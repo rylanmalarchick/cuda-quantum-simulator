@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: MIT
+// Copyright (c) 2024 Rylan Malarchick
+
 /**
  * @file Gates.cuh
  * @brief CUDA kernels for quantum gate operations on state vectors

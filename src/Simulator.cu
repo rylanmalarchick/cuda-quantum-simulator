@@ -1,11 +1,17 @@
+// SPDX-License-Identifier: MIT
+// Copyright (c) 2024 Rylan Malarchick
+
 #include "Simulator.hpp"
-#include "Gates.cuh"
+
 #include "Constants.hpp"
+#include "Gates.cuh"
+
 #include <cuda_runtime.h>
 #include <curand.h>
-#include <random>
+
 #include <algorithm>
 #include <numeric>
+#include <random>
 
 namespace qsim {
 

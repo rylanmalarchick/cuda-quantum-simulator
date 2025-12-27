@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: MIT
+// Copyright (c) 2024 Rylan Malarchick
+
 /**
  * @file benchmark_custatevec.cu
  * @brief Performance comparison between our simulator and NVIDIA cuStateVec

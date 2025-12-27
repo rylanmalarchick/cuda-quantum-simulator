@@ -1,10 +1,15 @@
+// SPDX-License-Identifier: MIT
+// Copyright (c) 2024 Rylan Malarchick
+
 #include "Circuit.hpp"
+
 #include "Constants.hpp"
-#include <stdexcept>
-#include <sstream>
-#include <random>
+
 #include <algorithm>
 #include <cmath>
+#include <random>
+#include <sstream>
+#include <stdexcept>
 
 namespace qsim {
 

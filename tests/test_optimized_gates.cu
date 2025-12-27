@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: MIT
+// Copyright (c) 2024 Rylan Malarchick
+
 /**
  * @file test_optimized_gates.cu
  * @brief Tests for OptimizedGates.cuh

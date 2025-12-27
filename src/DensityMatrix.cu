@@ -1,10 +1,16 @@
+// SPDX-License-Identifier: MIT
+// Copyright (c) 2024 Rylan Malarchick
+
 #include "DensityMatrix.cuh"
+
 #include "Constants.hpp"
-#include <cuda_runtime.h>
+
 #include <cuComplex.h>
+#include <cuda_runtime.h>
+
 #include <cmath>
-#include <stdexcept>
 #include <random>
+#include <stdexcept>
 
 namespace qsim {
 
