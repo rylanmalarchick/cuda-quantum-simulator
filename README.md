@@ -5,7 +5,9 @@ A high-performance quantum state vector simulator implemented in CUDA C++. This 
 ## Features
 
 - **GPU-Accelerated Simulation**: Full state vector simulation on NVIDIA GPUs
-- **Standard Gate Set**: X, Y, Z, H, S, T, S†, T†, Rx, Ry, Rz, CNOT, CZ, SWAP
+- **Standard Gate Set**: X, Y, Z, H, S, T, S†, T†, Rx, Ry, Rz, CNOT, CZ, SWAP, Toffoli (CCX), CRY, CRZ
+- **Noise Models**: Depolarizing, amplitude damping (T1), phase damping (T2), bit flip, phase flip
+- **Batched Simulation**: Run multiple trajectories in parallel for Monte Carlo sampling
 - **Measurement**: Single-qubit measurement with state collapse and multi-shot sampling
 - **Fluent Circuit API**: Chainable gate operations with input validation
 - **RAII Memory Management**: Safe GPU memory handling with automatic cleanup
@@ -110,6 +112,57 @@ auto ghz = Circuit::createGHZCircuit(5);
 auto random = Circuit::createRandomCircuit(4, 20);  // 4 qubits, depth 20
 ```
 
+### Noisy Simulation
+
+```cpp
+#include "NoiseModel.cuh"
+using namespace qsim;
+
+// Create a noise model with depolarizing error
+NoiseModel noise;
+noise.addDepolarizing(0.01);  // 1% depolarizing probability per gate
+
+// Run noisy simulation (Monte Carlo wavefunction method)
+NoisySimulator sim(3, noise, /*seed=*/42);
+Circuit circuit(3);
+circuit.h(0).cnot(0, 1).cnot(1, 2);
+
+sim.run(circuit);
+auto probs = sim.getProbabilities();
+```
+
+### Batched Monte Carlo Sampling
+
+```cpp
+// Run 1000 noisy trajectories in parallel on GPU
+NoiseModel noise;
+noise.addDepolarizing(0.005);
+noise.addAmplitudeDamping(0.001);  // T1 decay
+
+BatchedSimulator batch(/*n_qubits=*/3, /*batch_size=*/1000, noise);
+Circuit circuit(3);
+circuit.h(0).cnot(0, 1).cnot(1, 2);
+
+batch.run(circuit);
+
+// Get average probabilities across all trajectories
+auto avg_probs = batch.getAverageProbabilities();
+
+// Get histogram of measurement outcomes
+auto histogram = batch.getHistogram();  // Counts for each basis state
+```
+
+### Available Noise Channels
+
+| Noise Type | Description | Usage |
+|------------|-------------|-------|
+| Depolarizing | Random Pauli error (X, Y, or Z with equal probability) | `noise.addDepolarizing(p)` |
+| Amplitude Damping | T1 decay - relaxation to ground state | `noise.addAmplitudeDamping(gamma)` |
+| Phase Damping | T2 dephasing - loss of phase coherence | `noise.addPhaseDamping(gamma)` |
+| Bit Flip | X error with probability p | `noise.addBitFlip(p)` |
+| Phase Flip | Z error with probability p | `noise.addPhaseFlip(p)` |
+| Bit-Phase Flip | Y error with probability p | `noise.addBitPhaseFlip(p)` |
+
 ## Architecture
 
 ### Core Components
@@ -120,6 +173,7 @@ include/
 ├── Gates.cuh          # CUDA kernels for quantum gates
 ├── Circuit.hpp        # Circuit representation with fluent API
 ├── Simulator.hpp      # GPU simulator orchestration
+├── NoiseModel.cuh     # Noise models and batched simulation
 ├── CudaMemory.cuh     # RAII wrapper for CUDA memory
 └── Constants.hpp      # Configuration and math constants
 
@@ -128,6 +182,7 @@ src/
 ├── Gates.cu           # Gate kernel implementations
 ├── Circuit.cpp        # Circuit builder
 ├── Simulator.cu       # GPU and CPU simulator implementations
+├── NoiseModel.cu      # Noise model and batched simulator
 └── main.cpp           # Demo executable
 ```
 
@@ -176,6 +231,7 @@ The test suite uses Google Test and covers:
 | `test_gate_algebra` | Gate identities (HH=I, XX=I, etc.) |
 | `test_gpu_cpu_equivalence` | GPU matches CPU reference |
 | `test_boundary` | Edge cases and error handling |
+| `test_noise` | Noise models and batched simulation |
 
 ```bash
 # Run all tests
@@ -209,7 +265,7 @@ State vector size = 2^n × 16 bytes (double precision complex):
 
 ## Future Work
 
-- [ ] Toffoli (CCX) and controlled rotation gates
+- [ ] Density matrix simulation for mixed states
 - [ ] Shared memory optimization for gate kernels
 - [ ] Coalesced memory access patterns
 - [ ] cuStateVec integration for comparison

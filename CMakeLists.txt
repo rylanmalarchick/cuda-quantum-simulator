@@ -47,6 +47,7 @@ add_library(quantum_sim_lib STATIC
     src/Gates.cu
     src/Circuit.cpp
     src/Simulator.cu
+    src/NoiseModel.cu
 )
 
 target_link_libraries(quantum_sim_lib
@@ -107,6 +108,11 @@ add_test(NAME GPUCPUEquivalenceTest COMMAND test_gpu_cpu_equivalence)
 add_executable(test_boundary tests/test_boundary.cu)
 target_link_libraries(test_boundary quantum_sim_lib GTest::gtest_main)
 add_test(NAME BoundaryTest COMMAND test_boundary)
+
+# Noise model tests
+add_executable(test_noise tests/test_noise.cu)
+target_link_libraries(test_noise quantum_sim_lib GTest::gtest_main)
+add_test(NAME NoiseTest COMMAND test_noise)
 
 # ============================================================================
 # Benchmarks
