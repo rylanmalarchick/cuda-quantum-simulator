@@ -1,4 +1,5 @@
 #include "DensityMatrix.cuh"
+#include "Constants.hpp"
 #include <cuda_runtime.h>
 #include <cuComplex.h>
 #include <cmath>
@@ -7,17 +8,7 @@
 
 namespace qsim {
 
-// ============================================================================
-// Helper Macros
-// ============================================================================
-
-#define CUDA_CHECK(call) \
-    do { \
-        cudaError_t err = call; \
-        if (err != cudaSuccess) { \
-            throw std::runtime_error(std::string("CUDA error: ") + cudaGetErrorString(err)); \
-        } \
-    } while(0)
+// Use CUDA_CHECK from Constants.hpp for consistency
 
 // ============================================================================
 // DensityMatrix Class Implementation
@@ -48,9 +39,11 @@ DensityMatrix::DensityMatrix(int n_qubits, const std::vector<std::complex<double
     initFromPureState(pure_state);
 }
 
-DensityMatrix::~DensityMatrix() {
+DensityMatrix::~DensityMatrix() noexcept {
     if (d_rho_) {
+        // Ignore errors in destructor - cannot throw
         cudaFree(d_rho_);
+        d_rho_ = nullptr;
     }
 }
 
@@ -188,8 +181,11 @@ DensityMatrixSimulator::DensityMatrixSimulator(int n_qubits, const NoiseModel& n
     CUDA_CHECK(cudaMalloc(&d_scratch_, dim * dim * sizeof(cuDoubleComplex)));
 }
 
-DensityMatrixSimulator::~DensityMatrixSimulator() {
-    if (d_scratch_) cudaFree(d_scratch_);
+DensityMatrixSimulator::~DensityMatrixSimulator() noexcept {
+    if (d_scratch_) {
+        cudaFree(d_scratch_);
+        d_scratch_ = nullptr;
+    }
 }
 
 void DensityMatrixSimulator::reset() {
@@ -380,6 +376,7 @@ int DensityMatrixSimulator::measureQubit(int qubit) {
             p1 += probs[i];
         }
     }
+    double p0 = 1.0 - p1;
     
     // Random measurement
     std::random_device rd;
@@ -387,8 +384,17 @@ int DensityMatrixSimulator::measureQubit(int qubit) {
     std::uniform_real_distribution<> dis(0.0, 1.0);
     int result = (dis(gen) < p1) ? 1 : 0;
     
-    // TODO: Collapse density matrix (partial trace + renormalization)
-    // For now, just return the result without collapsing
+    // Collapse density matrix: project onto measurement outcome and renormalize
+    // ρ' = P_m ρ P_m / Tr(P_m ρ P_m) = P_m ρ P_m / p_m
+    double prob_result = (result == 1) ? p1 : p0;
+    double norm_factor = 1.0 / prob_result;
+    
+    int n_qubits = rho_.getNumQubits();
+    int threads = 256;
+    int blocks = (dim * dim + threads - 1) / threads;
+    dmCollapseMeasurement<<<blocks, threads>>>(rho_.getDevicePtr(), n_qubits, qubit, 
+                                                result, norm_factor);
+    CUDA_CHECK(cudaDeviceSynchronize());
     
     return result;
 }
@@ -595,21 +601,36 @@ __global__ void dmApplyS(cuDoubleComplex* rho, int n_qubits, int target) {
     int row_bit = (row >> target) & 1;
     int col_bit = (col >> target) & 1;
     
-    // S = [[1,0],[0,i]], S^dag = [[1,0],[0,-i]]
-    // S rho S^dag: multiply by i^(row_bit) * (-i)^(col_bit)
-    // = i^(row_bit - col_bit)
+    // S = diag(1, i), S^dag = diag(1, -i)
+    // For density matrix: rho'[r][c] = S[row_bit] * rho[r][c] * S^dag[col_bit]
+    // S[0] = 1, S[1] = i
+    // S^dag[0] = 1, S^dag[1] = -i
+    
+    // Phase factor: i^(row_bit) * (-i)^(col_bit) = i^(row_bit - col_bit)
+    // row_bit=0, col_bit=0: 1
+    // row_bit=1, col_bit=0: i
+    // row_bit=0, col_bit=1: -i
+    // row_bit=1, col_bit=1: 1
+    
+    int phase_exp = row_bit - col_bit;  // -1, 0, or 1
     
     cuDoubleComplex val = rho[idx];
-    if (row_bit && !col_bit) {
-        // Multiply by i
-        rho[idx] = make_cuDoubleComplex(-cuCimag(val), cuCreal(val));
-    } else if (!row_bit && col_bit) {
-        // Multiply by -i
-        rho[idx] = make_cuDoubleComplex(cuCimag(val), -cuCreal(val));
+    cuDoubleComplex result;
+    
+    if (phase_exp == 0) {
+        result = val;  // No phase change
+    } else if (phase_exp == 1) {
+        // Multiply by i: (a + bi) * i = -b + ai
+        result = make_cuDoubleComplex(-cuCimag(val), cuCreal(val));
+    } else {  // phase_exp == -1
+        // Multiply by -i: (a + bi) * (-i) = b - ai
+        result = make_cuDoubleComplex(cuCimag(val), -cuCreal(val));
     }
-    // If both same, phase cancels
+    
+    rho[idx] = result;
 }
 
+// T gate: T = diag(1, e^(i*pi/4)) = diag(1, (1+i)/sqrt(2))
 __global__ void dmApplyT(cuDoubleComplex* rho, int n_qubits, int target) {
     size_t dim = 1ULL << n_qubits;
     size_t idx = blockIdx.x * blockDim.x + threadIdx.x;
@@ -621,26 +642,30 @@ __global__ void dmApplyT(cuDoubleComplex* rho, int n_qubits, int target) {
     int row_bit = (row >> target) & 1;
     int col_bit = (col >> target) & 1;
     
-    // T = [[1,0],[0,e^(i*pi/4)]], T^dag = [[1,0],[0,e^(-i*pi/4)]]
-    const double inv_sqrt2 = 0.7071067811865476;
+    // T = diag(1, e^(i*pi/4)), T^dag = diag(1, e^(-i*pi/4))
+    // Phase factor: e^(i*pi/4*row_bit) * e^(-i*pi/4*col_bit) = e^(i*pi/4*(row_bit - col_bit))
+    
+    int phase_exp = row_bit - col_bit;  // -1, 0, or 1
+    
+    if (phase_exp == 0) return;  // No change needed
     
     cuDoubleComplex val = rho[idx];
+    const double inv_sqrt2 = 0.70710678118654752440;
     
-    if (row_bit && !col_bit) {
+    if (phase_exp == 1) {
         // Multiply by e^(i*pi/4) = (1+i)/sqrt(2)
-        rho[idx] = make_cuDoubleComplex(
-            (cuCreal(val) - cuCimag(val)) * inv_sqrt2,
-            (cuCreal(val) + cuCimag(val)) * inv_sqrt2
-        );
-    } else if (!row_bit && col_bit) {
+        double re = inv_sqrt2 * (cuCreal(val) - cuCimag(val));
+        double im = inv_sqrt2 * (cuCreal(val) + cuCimag(val));
+        rho[idx] = make_cuDoubleComplex(re, im);
+    } else {  // phase_exp == -1
         // Multiply by e^(-i*pi/4) = (1-i)/sqrt(2)
-        rho[idx] = make_cuDoubleComplex(
-            (cuCreal(val) + cuCimag(val)) * inv_sqrt2,
-            (-cuCreal(val) + cuCimag(val)) * inv_sqrt2
-        );
+        double re = inv_sqrt2 * (cuCreal(val) + cuCimag(val));
+        double im = inv_sqrt2 * (-cuCreal(val) + cuCimag(val));
+        rho[idx] = make_cuDoubleComplex(re, im);
     }
 }
 
+// S^dag gate: Sdag = diag(1, -i)
 __global__ void dmApplySdag(cuDoubleComplex* rho, int n_qubits, int target) {
     size_t dim = 1ULL << n_qubits;
     size_t idx = blockIdx.x * blockDim.x + threadIdx.x;
@@ -652,16 +677,28 @@ __global__ void dmApplySdag(cuDoubleComplex* rho, int n_qubits, int target) {
     int row_bit = (row >> target) & 1;
     int col_bit = (col >> target) & 1;
     
+    // Sdag = diag(1, -i), (Sdag)^dag = S = diag(1, i)
+    // Phase factor: (-i)^row_bit * i^col_bit
+    
+    int phase_exp = col_bit - row_bit;  // Opposite of S gate
+    
+    if (phase_exp == 0) return;
+    
     cuDoubleComplex val = rho[idx];
-    if (row_bit && !col_bit) {
-        // Multiply by -i
-        rho[idx] = make_cuDoubleComplex(cuCimag(val), -cuCreal(val));
-    } else if (!row_bit && col_bit) {
+    cuDoubleComplex result;
+    
+    if (phase_exp == 1) {
         // Multiply by i
-        rho[idx] = make_cuDoubleComplex(-cuCimag(val), cuCreal(val));
+        result = make_cuDoubleComplex(-cuCimag(val), cuCreal(val));
+    } else {  // phase_exp == -1
+        // Multiply by -i
+        result = make_cuDoubleComplex(cuCimag(val), -cuCreal(val));
     }
+    
+    rho[idx] = result;
 }
 
+// T^dag gate: Tdag = diag(1, e^(-i*pi/4))
 __global__ void dmApplyTdag(cuDoubleComplex* rho, int n_qubits, int target) {
     size_t dim = 1ULL << n_qubits;
     size_t idx = blockIdx.x * blockDim.x + threadIdx.x;
@@ -673,54 +710,31 @@ __global__ void dmApplyTdag(cuDoubleComplex* rho, int n_qubits, int target) {
     int row_bit = (row >> target) & 1;
     int col_bit = (col >> target) & 1;
     
-    const double inv_sqrt2 = 0.7071067811865476;
+    // Tdag = diag(1, e^(-i*pi/4)), (Tdag)^dag = T = diag(1, e^(i*pi/4))
+    // Phase factor: e^(-i*pi/4*row_bit) * e^(i*pi/4*col_bit) = e^(i*pi/4*(col_bit - row_bit))
+    
+    int phase_exp = col_bit - row_bit;  // Opposite of T gate
+    
+    if (phase_exp == 0) return;
     
     cuDoubleComplex val = rho[idx];
+    const double inv_sqrt2 = 0.70710678118654752440;
     
-    if (row_bit && !col_bit) {
-        // Multiply by e^(-i*pi/4)
-        rho[idx] = make_cuDoubleComplex(
-            (cuCreal(val) + cuCimag(val)) * inv_sqrt2,
-            (-cuCreal(val) + cuCimag(val)) * inv_sqrt2
-        );
-    } else if (!row_bit && col_bit) {
-        // Multiply by e^(i*pi/4)
-        rho[idx] = make_cuDoubleComplex(
-            (cuCreal(val) - cuCimag(val)) * inv_sqrt2,
-            (cuCreal(val) + cuCimag(val)) * inv_sqrt2
-        );
+    if (phase_exp == 1) {
+        // Multiply by e^(i*pi/4) = (1+i)/sqrt(2)
+        double re = inv_sqrt2 * (cuCreal(val) - cuCimag(val));
+        double im = inv_sqrt2 * (cuCreal(val) + cuCimag(val));
+        rho[idx] = make_cuDoubleComplex(re, im);
+    } else {  // phase_exp == -1
+        // Multiply by e^(-i*pi/4) = (1-i)/sqrt(2)
+        double re = inv_sqrt2 * (cuCreal(val) + cuCimag(val));
+        double im = inv_sqrt2 * (-cuCreal(val) + cuCimag(val));
+        rho[idx] = make_cuDoubleComplex(re, im);
     }
 }
 
-__global__ void dmApplyRz(cuDoubleComplex* rho, int n_qubits, int target, double theta) {
-    size_t dim = 1ULL << n_qubits;
-    size_t idx = blockIdx.x * blockDim.x + threadIdx.x;
-    if (idx >= dim * dim) return;
-    
-    size_t row = idx / dim;
-    size_t col = idx % dim;
-    
-    int row_bit = (row >> target) & 1;
-    int col_bit = (col >> target) & 1;
-    
-    // Rz(theta) = [[e^(-i*theta/2), 0], [0, e^(i*theta/2)]]
-    // Net phase: e^(i*theta/2 * (row_bit - col_bit))
-    
-    if (row_bit != col_bit) {
-        double phase = theta * 0.5 * (row_bit ? 1 : -1) + theta * 0.5 * (col_bit ? -1 : 1);
-        // Simplifies to: phase = theta * (row_bit - col_bit)
-        phase = theta * (row_bit - col_bit);
-        double c = cos(phase);
-        double s = sin(phase);
-        
-        cuDoubleComplex val = rho[idx];
-        rho[idx] = make_cuDoubleComplex(
-            c * cuCreal(val) - s * cuCimag(val),
-            s * cuCreal(val) + c * cuCimag(val)
-        );
-    }
-}
-
+// Rx gate: Rx(theta) - rotation around X axis
+// Non-diagonal gate, needs 2x2 block processing
 __global__ void dmApplyRx(cuDoubleComplex* rho, int n_qubits, int target, double theta) {
     size_t dim = 1ULL << n_qubits;
     size_t idx = blockIdx.x * blockDim.x + threadIdx.x;
@@ -733,57 +747,88 @@ __global__ void dmApplyRx(cuDoubleComplex* rho, int n_qubits, int target, double
     int row_bit = (row >> target) & 1;
     int col_bit = (col >> target) & 1;
     
-    // Only process each 2x2 block once
+    // Only process each 2x2 block once (when row_bit=0 and col_bit=0)
     if (row_bit == 0 && col_bit == 0) {
         size_t r0 = row, r1 = row | mask;
         size_t c0 = col, c1 = col | mask;
         
         double c = cos(theta / 2.0);
         double s = sin(theta / 2.0);
-        
-        // Rx = [[c, -is], [-is, c]]
-        // Rx^dag = [[c, is], [is, c]]
+        double c2 = c * c;
+        double s2 = s * s;
         
         cuDoubleComplex a00 = rho[r0 * dim + c0];
         cuDoubleComplex a01 = rho[r0 * dim + c1];
         cuDoubleComplex a10 = rho[r1 * dim + c0];
         cuDoubleComplex a11 = rho[r1 * dim + c1];
         
+        // Rx = [[c, -is], [-is, c]]
+        // Rx^dag = [[c, is], [is, c]]
         // rho' = Rx * rho * Rx^dag
-        // This is a 4x4 matrix operation on the 2x2 blocks
         
-        double c2 = c * c;
-        double s2 = s * s;
-        double cs = c * s;
-        
-        // n00 = c^2*a00 + s^2*a11 + ics*(a01 - a01^*) - ics*(a10 - a10^*)
-        // Simplified: n00 = c^2*a00 + s^2*a11 - cs*(a01_i + a10_i)*2i (for real diagonal)
-        // Actually need full complex arithmetic
-        
-        cuDoubleComplex n00 = make_cuDoubleComplex(
-            c2 * cuCreal(a00) + s2 * cuCreal(a11) + cs * (cuCimag(a01) + cuCimag(a10)),
-            c2 * cuCimag(a00) + s2 * cuCimag(a11) - cs * (cuCreal(a01) + cuCreal(a10)) + cs * (cuCreal(a01) + cuCreal(a10))
-        );
-        // This is getting complex - use direct matrix multiplication for correctness
-        // For now, simplified version (may have phase errors)
-        
+        // n00 = c*a00*c + c*a01*(is) + (-is)*a10*c + (-is)*a11*(is)
+        //     = c^2*a00 + ics*a01 - ics*a10 + s^2*a11
         rho[r0 * dim + c0] = make_cuDoubleComplex(
-            c2 * cuCreal(a00) + s2 * cuCreal(a11) + cs * (cuCimag(a01) + cuCimag(a10)),
-            c2 * cuCimag(a00) + s2 * cuCimag(a11) - cs * (cuCreal(a01) - cuCreal(a10))
+            c2 * cuCreal(a00) + s2 * cuCreal(a11) - s * (cuCimag(a01) - cuCimag(a10)) * c,
+            c2 * cuCimag(a00) + s2 * cuCimag(a11) + s * (cuCreal(a01) - cuCreal(a10)) * c
         );
+        
+        // n01 = c*a00*(is) + c*a01*c + (-is)*a10*(is) + (-is)*a11*c
+        //     = ics*a00 + c^2*a01 + s^2*a10 - ics*a11
         rho[r0 * dim + c1] = make_cuDoubleComplex(
-            c2 * cuCreal(a01) + s2 * cuCreal(a10) + cs * (cuCimag(a00) - cuCimag(a11)),
-            c2 * cuCimag(a01) + s2 * cuCimag(a10) - cs * (cuCreal(a00) - cuCreal(a11))
+            c2 * cuCreal(a01) + s2 * cuCreal(a10) + c * s * (cuCimag(a00) - cuCimag(a11)),
+            c2 * cuCimag(a01) + s2 * cuCimag(a10) - c * s * (cuCreal(a00) - cuCreal(a11))
         );
+        
+        // n10 = (-is)*a00*c + (-is)*a01*(is) + c*a10*c + c*a11*(is)
+        //     = -ics*a00 + s^2*a01 + c^2*a10 + ics*a11
         rho[r1 * dim + c0] = make_cuDoubleComplex(
-            c2 * cuCreal(a10) + s2 * cuCreal(a01) + cs * (cuCimag(a11) - cuCimag(a00)),
-            c2 * cuCimag(a10) + s2 * cuCimag(a01) - cs * (cuCreal(a11) - cuCreal(a00))
+            c2 * cuCreal(a10) + s2 * cuCreal(a01) - c * s * (cuCimag(a00) - cuCimag(a11)),
+            c2 * cuCimag(a10) + s2 * cuCimag(a01) + c * s * (cuCreal(a00) - cuCreal(a11))
         );
+        
+        // n11 = (-is)*a00*(is) + (-is)*a01*c + c*a10*(is) + c*a11*c
+        //     = s^2*a00 - ics*a01 + ics*a10 + c^2*a11
         rho[r1 * dim + c1] = make_cuDoubleComplex(
-            c2 * cuCreal(a11) + s2 * cuCreal(a00) - cs * (cuCimag(a01) + cuCimag(a10)),
-            c2 * cuCimag(a11) + s2 * cuCimag(a00) + cs * (cuCreal(a01) - cuCreal(a10))
+            c2 * cuCreal(a11) + s2 * cuCreal(a00) + s * (cuCimag(a01) - cuCimag(a10)) * c,
+            c2 * cuCimag(a11) + s2 * cuCimag(a00) - s * (cuCreal(a01) - cuCreal(a10)) * c
         );
     }
+}
+
+// Rz gate: Rz(theta) = diag(e^(-i*theta/2), e^(i*theta/2))
+// This is a diagonal gate
+__global__ void dmApplyRz(cuDoubleComplex* rho, int n_qubits, int target, double theta) {
+    size_t dim = 1ULL << n_qubits;
+    size_t idx = blockIdx.x * blockDim.x + threadIdx.x;
+    if (idx >= dim * dim) return;
+    
+    size_t row = idx / dim;
+    size_t col = idx % dim;
+    
+    int row_bit = (row >> target) & 1;
+    int col_bit = (col >> target) & 1;
+    
+    // Rz = diag(e^(-i*theta/2), e^(i*theta/2))
+    // Rz^dag = diag(e^(i*theta/2), e^(-i*theta/2))
+    // Phase for row: e^(i*theta/2 * (2*row_bit - 1)) (row_bit=0 -> -1, row_bit=1 -> 1)
+    // Phase for col^dag: e^(-i*theta/2 * (2*col_bit - 1))
+    // Combined: e^(i*theta/2 * ((2*row_bit-1) - (2*col_bit-1))) = e^(i*theta*(row_bit - col_bit))
+    
+    int phase_factor = row_bit - col_bit;  // -1, 0, or 1
+    
+    if (phase_factor == 0) return;
+    
+    cuDoubleComplex val = rho[idx];
+    double angle = theta * phase_factor;
+    double c = cos(angle);
+    double s = sin(angle);
+    
+    // Multiply by e^(i*angle) = cos(angle) + i*sin(angle)
+    rho[idx] = make_cuDoubleComplex(
+        c * cuCreal(val) - s * cuCimag(val),
+        s * cuCreal(val) + c * cuCimag(val)
+    );
 }
 
 __global__ void dmApplyRy(cuDoubleComplex* rho, int n_qubits, int target, double theta) {
@@ -1021,8 +1066,6 @@ __global__ void dmApplyBitFlip(cuDoubleComplex* rho, int n_qubits, int target, d
     size_t row = idx / dim;
     size_t col = idx % dim;
     
-    int row_bit = (row >> target) & 1;
-    int col_bit = (col >> target) & 1;
     size_t mask = 1ULL << target;
     
     // Bit flip: rho' = (1-p)*rho + p*X*rho*X
@@ -1069,6 +1112,41 @@ __global__ void dmApplyPhaseFlip(cuDoubleComplex* rho, int n_qubits, int target,
         double scale = 1.0 - 2.0 * p;
         cuDoubleComplex val = rho[idx];
         rho[idx] = make_cuDoubleComplex(scale * cuCreal(val), scale * cuCimag(val));
+    }
+}
+
+/**
+ * Kernel to collapse density matrix after measurement.
+ * Projects onto |result><result| subspace for measured qubit.
+ * 
+ * Reference: Nielsen & Chuang, Section 2.4 "Measurements"
+ * 
+ * For measurement outcome m on qubit q:
+ *   ρ' = P_m ρ P_m / Tr(P_m ρ P_m)
+ * where P_m = |m><m| on qubit q tensored with identity on others.
+ */
+__global__ void dmCollapseMeasurement(cuDoubleComplex* rho, int n_qubits, int target, 
+                                       int result, double norm_factor) {
+    size_t dim = 1ULL << n_qubits;
+    size_t idx = blockIdx.x * blockDim.x + threadIdx.x;
+    if (idx >= dim * dim) return;
+    
+    size_t row = idx / dim;
+    size_t col = idx % dim;
+    
+    int row_bit = (row >> target) & 1;
+    int col_bit = (col >> target) & 1;
+    
+    // Zero out elements where target qubit doesn't match result
+    if (row_bit != result || col_bit != result) {
+        rho[idx] = make_cuDoubleComplex(0.0, 0.0);
+    } else {
+        // Renormalize surviving elements
+        cuDoubleComplex val = rho[idx];
+        rho[idx] = make_cuDoubleComplex(
+            cuCreal(val) * norm_factor,
+            cuCimag(val) * norm_factor
+        );
     }
 }
 

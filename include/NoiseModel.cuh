@@ -1,3 +1,28 @@
+/**
+ * @file NoiseModel.cuh
+ * @brief Noise models and noisy simulation for quantum circuits
+ * @author Rylan Malarchick
+ * @date 2024
+ * 
+ * Implements realistic noise models for quantum circuit simulation using the
+ * Monte Carlo wavefunction method (quantum trajectories). This approach
+ * maintains state vector representation while applying noise probabilistically.
+ * 
+ * Noise channels implemented:
+ * - Depolarizing: ρ → (1-p)ρ + (p/3)(XρX + YρY + ZρZ)
+ * - Amplitude damping (T1): Models energy relaxation to ground state
+ * - Phase damping (T2): Models loss of phase coherence
+ * - Bit flip, Phase flip, Bit-phase flip: Probabilistic Pauli errors
+ * 
+ * @references
+ * - Nielsen, M. A., & Chuang, I. L. (2010). Quantum Computation and Quantum
+ *   Information, Chapter 8: Quantum noise and quantum operations.
+ * - Dalibard, J., Castin, Y., & Mølmer, K. (1992). Wave-function approach to
+ *   dissipative processes in quantum optics. Physical Review Letters, 68(5), 580.
+ * - Carmichael, H. J. (1993). An Open Systems Approach to Quantum Optics.
+ *   Lecture Notes in Physics, Vol. 18. Springer-Verlag.
+ */
+
 #pragma once
 
 #include <cuda_runtime.h>
@@ -111,7 +136,7 @@ class NoisySimulator {
 public:
     NoisySimulator(int num_qubits, const NoiseModel& noise_model);
     NoisySimulator(int num_qubits);  // No noise (equivalent to regular Simulator)
-    ~NoisySimulator();
+    ~NoisySimulator() noexcept;
     
     // Set/update noise model
     void setNoiseModel(const NoiseModel& noise_model);
@@ -199,7 +224,7 @@ class BatchedSimulator {
 public:
     BatchedSimulator(int num_qubits, int batch_size);
     BatchedSimulator(int num_qubits, int batch_size, const NoiseModel& noise_model);
-    ~BatchedSimulator();
+    ~BatchedSimulator() noexcept;
     
     // Disable copy
     BatchedSimulator(const BatchedSimulator&) = delete;

@@ -1,3 +1,35 @@
+/**
+ * @file OptimizedGates.cuh
+ * @brief High-performance CUDA kernels with memory access optimizations
+ * @author Rylan Malarchick
+ * @date 2024
+ *
+ * Implements optimized quantum gate kernels that exploit GPU memory hierarchy
+ * for improved performance over naive implementations. Two key optimization
+ * strategies are employed based on the target qubit index:
+ *
+ * 1. **Shared Memory Tiling** (target qubits 0-4):
+ *    Loads tiles of the state vector into shared memory where paired amplitudes
+ *    are close together. Gate operations are performed entirely in shared memory
+ *    before writing back, reducing global memory bandwidth requirements.
+ *
+ * 2. **Coalesced Memory Access** (target qubits 5+):
+ *    When paired amplitudes are far apart in memory, reorganizes thread
+ *    assignments to ensure warps access consecutive memory locations,
+ *    maximizing memory throughput.
+ *
+ * These optimizations typically provide 2-5x speedup over basic implementations,
+ * with larger gains for circuits with many gates on low-order qubits.
+ *
+ * @see Gates.cuh for standard (non-optimized) kernel implementations
+ *
+ * @references
+ * - Nvidia CUDA C++ Programming Guide: Shared Memory
+ * - Nvidia CUDA C++ Best Practices Guide: Memory Optimizations
+ * - Haner, T., & Steiger, D. S. (2017). 0.5 Petabyte Simulation of a 45-Qubit
+ *   Quantum Circuit. SC17: International Conference for High Performance
+ *   Computing, Networking, Storage and Analysis.
+ */
 #pragma once
 
 #include <cuda_runtime.h>

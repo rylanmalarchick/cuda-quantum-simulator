@@ -1,3 +1,26 @@
+/**
+ * @file CudaMemory.cuh
+ * @brief RAII wrapper for CUDA device memory management
+ * @author Rylan Malarchick
+ * @date 2024
+ *
+ * Provides automatic memory management for GPU allocations following the
+ * Resource Acquisition Is Initialization (RAII) idiom. Memory is allocated
+ * on construction and automatically freed on destruction, ensuring exception
+ * safety and preventing memory leaks.
+ *
+ * Key features:
+ * - Move semantics (no copying) to prevent double-free
+ * - Automatic cleanup even when exceptions are thrown
+ * - Convenient host<->device transfer methods
+ * - Zero-overhead abstraction (raw pointer access for kernels)
+ *
+ * This wrapper is used by StateVector and DensityMatrix to manage their
+ * GPU memory allocations.
+ *
+ * @note Destructor is noexcept and logs errors rather than throwing to
+ *       ensure safe cleanup during stack unwinding.
+ */
 #pragma once
 
 #include <cuda_runtime.h>

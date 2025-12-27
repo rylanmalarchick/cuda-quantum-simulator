@@ -1,3 +1,21 @@
+/**
+ * @file StateVector.cuh
+ * @brief GPU-resident quantum state vector for quantum circuit simulation
+ * @author Rylan Malarchick
+ * @date 2024
+ * 
+ * This file implements a state vector representation for simulating quantum
+ * circuits on NVIDIA GPUs using CUDA. The state vector stores 2^n complex
+ * amplitudes representing n-qubit quantum states.
+ * 
+ * @references
+ * - Nielsen, M. A., & Chuang, I. L. (2010). Quantum Computation and Quantum
+ *   Information (10th Anniversary Edition). Cambridge University Press.
+ *   ISBN: 978-1107002173
+ * - Preskill, J. (1998). Lecture Notes for Physics 229: Quantum Information
+ *   and Computation. California Institute of Technology.
+ */
+
 #pragma once
 
 #include <cuda_runtime.h>

@@ -1,3 +1,33 @@
+/**
+ * @file DensityMatrix.cuh
+ * @brief Density matrix representation for mixed quantum state simulation
+ * @author Rylan Malarchick
+ * @date 2024
+ *
+ * Implements GPU-accelerated density matrix operations for simulating open
+ * quantum systems and noisy quantum circuits. The density matrix formalism
+ * allows exact representation of mixed states and decoherence effects that
+ * cannot be captured by pure state vectors.
+ *
+ * The density matrix rho for n qubits is a 2^n x 2^n Hermitian, positive
+ * semi-definite matrix with unit trace. Gate operations are applied as:
+ *   rho' = U rho U^dagger
+ *
+ * Noise channels are applied using Kraus operators {K_k}:
+ *   rho' = sum_k K_k rho K_k^dagger
+ *
+ * @note Memory scales as O(4^n), limiting practical simulation to ~14 qubits
+ *       on an 8GB GPU versus ~27 qubits for state vector simulation.
+ *
+ * @see NoiseModel.cuh for noise channel implementations
+ *
+ * @references
+ * - Nielsen, M. A., & Chuang, I. L. (2010). Quantum Computation and Quantum
+ *   Information (10th Anniversary Edition). Cambridge University Press.
+ *   Chapter 8: Quantum noise and quantum operations.
+ * - Preskill, J. (1998). Lecture Notes for Physics 229: Quantum Information
+ *   and Computation. California Institute of Technology.
+ */
 #pragma once
 
 #include <cuda_runtime.h>
@@ -40,7 +70,7 @@ public:
      */
     DensityMatrix(int n_qubits, const std::vector<std::complex<double>>& pure_state);
     
-    ~DensityMatrix();
+    ~DensityMatrix() noexcept;
     
     // Prevent copying (GPU resource)
     DensityMatrix(const DensityMatrix&) = delete;
@@ -129,7 +159,7 @@ public:
      */
     explicit DensityMatrixSimulator(int n_qubits, const NoiseModel& noise = NoiseModel());
     
-    ~DensityMatrixSimulator();
+    ~DensityMatrixSimulator() noexcept;
     
     /**
      * Reset to |0...0⟩⟨0...0|
@@ -235,5 +265,7 @@ __global__ void dmComputeDiagonal(const cuDoubleComplex* rho, double* diag, size
 __global__ void dmComputeTrace(const cuDoubleComplex* rho, double* trace, size_t dim);
 __global__ void dmInitPure(cuDoubleComplex* rho, const cuDoubleComplex* state, size_t dim);
 __global__ void dmInitMaxMixed(cuDoubleComplex* rho, size_t dim, double val);
+__global__ void dmCollapseMeasurement(cuDoubleComplex* rho, int n_qubits, int target, 
+                                       int result, double norm_factor);
 
 } // namespace qsim

@@ -1,3 +1,28 @@
+/**
+ * @file Gates.cuh
+ * @brief CUDA kernels for quantum gate operations on state vectors
+ * @author Rylan Malarchick
+ * @date 2024
+ * 
+ * Implements CUDA kernels for applying quantum gates to GPU-resident state
+ * vectors. Each gate is implemented as a parallel kernel operating on pairs
+ * (for 1-qubit gates) or groups (for multi-qubit gates) of amplitudes.
+ * 
+ * Gate matrices follow the standard definitions from Nielsen & Chuang:
+ * - Pauli gates: X, Y, Z (Section 1.2)
+ * - Hadamard: H = (1/√2)[[1,1],[1,-1]] (Section 1.2)
+ * - Phase gates: S = [[1,0],[0,i]], T = [[1,0],[0,e^(iπ/4)]] (Section 4.2)
+ * - Rotation gates: Rx(θ), Ry(θ), Rz(θ) (Section 4.2)
+ * - Controlled gates: CNOT, CZ, CRY, CRZ (Section 4.3)
+ * - Three-qubit gates: Toffoli/CCX (Section 4.3)
+ * 
+ * @references
+ * - Nielsen, M. A., & Chuang, I. L. (2010). Quantum Computation and Quantum
+ *   Information (10th Anniversary Edition). Cambridge University Press.
+ * - Barenco, A., et al. (1995). Elementary gates for quantum computation.
+ *   Physical Review A, 52(5), 3457. arXiv:quant-ph/9503016
+ */
+
 #pragma once
 
 #include <cuda_runtime.h>

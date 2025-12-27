@@ -1,3 +1,30 @@
+/**
+ * @file Circuit.hpp
+ * @brief Quantum circuit representation with fluent gate API
+ * @author Rylan Malarchick
+ * @date 2024
+ *
+ * Provides a high-level interface for constructing quantum circuits using
+ * method chaining (fluent API). Circuits are represented as ordered sequences
+ * of gate operations that can be executed by the Simulator.
+ *
+ * Supported gate set includes:
+ * - Single-qubit: Pauli (X, Y, Z), Hadamard (H), Phase (S, T), Rotations (Rx, Ry, Rz)
+ * - Two-qubit: CNOT, CZ, SWAP, controlled rotations (CRY, CRZ)
+ * - Three-qubit: Toffoli (CCX)
+ *
+ * This gate set is universal for quantum computation. The Clifford+T subset
+ * (H, S, CNOT, T) forms an approximately universal gate set.
+ *
+ * @see Simulator.hpp for circuit execution
+ *
+ * @references
+ * - Barenco, A., et al. (1995). Elementary gates for quantum computation.
+ *   Physical Review A, 52(5), 3457.
+ * - Nielsen, M. A., & Chuang, I. L. (2010). Quantum Computation and Quantum
+ *   Information (10th Anniversary Edition). Cambridge University Press.
+ *   Chapter 4: Quantum circuits.
+ */
 #pragma once
 
 #include <vector>

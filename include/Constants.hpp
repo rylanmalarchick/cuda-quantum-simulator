@@ -1,3 +1,22 @@
+/**
+ * @file Constants.hpp
+ * @brief Mathematical constants, CUDA configuration, and error handling macros
+ * @author Rylan Malarchick
+ * @date 2024
+ *
+ * Centralizes all compile-time constants and configuration parameters for
+ * the quantum simulator. Includes:
+ *
+ * - Mathematical constants (pi, sqrt(2), tolerances)
+ * - CUDA kernel configuration (block sizes, qubit limits)
+ * - Error handling macros (CUDA_CHECK, CUSOLVER_CHECK)
+ *
+ * Using centralized constants ensures consistency across the codebase and
+ * makes it easy to tune parameters for different GPU architectures.
+ *
+ * @note CUDA_CHECK and CUSOLVER_CHECK macros provide file/line information
+ *       for debugging CUDA errors.
+ */
 #pragma once
 
 #include <cstddef>

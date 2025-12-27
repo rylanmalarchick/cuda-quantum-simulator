@@ -331,7 +331,7 @@ NoisySimulator::NoisySimulator(int num_qubits)
 {
 }
 
-NoisySimulator::~NoisySimulator() {
+NoisySimulator::~NoisySimulator() noexcept {
     deallocate();
 }
 
@@ -650,7 +650,7 @@ int NoisySimulator::measureQubit(int qubit) {
     auto state = getStateVector();
     double norm = 0.0;
     for (size_t i = 0; i < size_; ++i) {
-        if (((i >> qubit) & 1) == result) {
+        if (((i >> qubit) & 1) == static_cast<size_t>(result)) {
             norm += std::norm(state[i]);
         } else {
             state[i] = std::complex<double>(0.0, 0.0);
@@ -691,7 +691,7 @@ BatchedSimulator::BatchedSimulator(int num_qubits, int batch_size, const NoiseMo
     noise_model_ = noise_model;
 }
 
-BatchedSimulator::~BatchedSimulator() {
+BatchedSimulator::~BatchedSimulator() noexcept {
     deallocate();
 }
 
@@ -843,7 +843,7 @@ __global__ void applyBatchedCNOT(cuDoubleComplex* states, int n_qubits,
     }
 }
 
-void BatchedSimulator::launchBatchedTwoQubitGate(int gate_type, int qubit1, int qubit2, double param) {
+void BatchedSimulator::launchBatchedTwoQubitGate(int gate_type, int qubit1, int qubit2, double /*param*/) {
     size_t total_states = batch_size_ * state_size_;
     int threads = cuda_config::DEFAULT_BLOCK_SIZE;
     int blocks = (total_states + threads - 1) / threads;

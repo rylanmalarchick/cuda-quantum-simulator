@@ -1,3 +1,31 @@
+/**
+ * @file Simulator.hpp
+ * @brief Main quantum circuit simulator orchestrating GPU execution
+ * @author Rylan Malarchick
+ * @date 2024
+ *
+ * Provides the primary interface for quantum circuit simulation. The Simulator
+ * manages a GPU-resident state vector and dispatches gate operations to
+ * optimized CUDA kernels.
+ *
+ * Key capabilities:
+ * - Circuit execution with automatic kernel dispatch
+ * - State vector inspection and probability extraction
+ * - Sampling (without collapse) and measurement (with collapse)
+ * - Support for up to 27 qubits on 8GB GPU (state vector: 2^n * 16 bytes)
+ *
+ * Performance is achieved through:
+ * - GPU-accelerated gate kernels with coalesced memory access
+ * - Shared memory optimization for gates on low-order qubits
+ * - Efficient reduction kernels for probability computation
+ *
+ * @see StateVector.cuh for GPU memory management
+ * @see Gates.cuh for kernel implementations
+ *
+ * @references
+ * - Nielsen, M. A., & Chuang, I. L. (2010). Quantum Computation and Quantum
+ *   Information (10th Anniversary Edition). Cambridge University Press.
+ */
 #pragma once
 
 #include "StateVector.cuh"

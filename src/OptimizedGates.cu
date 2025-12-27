@@ -354,23 +354,21 @@ __global__ void applyFusedSingleQubitLayer(cuDoubleComplex* state, int n_qubits,
     for (int q = 0; q < n_qubits; ++q) {
         if (!((active_qubits >> q) & 1)) continue;
         
-        // Get gate matrix for this qubit
-        cuDoubleComplex a = gate_params[q * 4 + 0];
-        cuDoubleComplex b = gate_params[q * 4 + 1];
-        cuDoubleComplex c = gate_params[q * 4 + 2];
-        cuDoubleComplex d = gate_params[q * 4 + 3];
+        // Get diagonal elements of gate matrix for this qubit
+        // Note: This kernel only works for diagonal gates (Z, S, T, Rz, etc.)
+        // Off-diagonal elements b, c are not used
+        cuDoubleComplex a = gate_params[q * 4 + 0];  // |0><0| coefficient
+        cuDoubleComplex d = gate_params[q * 4 + 3];  // |1><1| coefficient
         
         // Determine if this state has qubit q as 0 or 1
         bool bit = (idx >> q) & 1;
         
-        // Apply the appropriate row of the gate matrix
-        // This gives the contribution to the current basis state
+        // Apply the appropriate diagonal element of the gate matrix
         if (bit) {
-            // |1> state: amplitude *= d (diagonal element)
-            // Note: This only works for diagonal gates!
+            // |1> state: amplitude *= d
             amplitude = qCmul(d, amplitude);
         } else {
-            // |0> state: amplitude *= a (diagonal element)
+            // |0> state: amplitude *= a
             amplitude = qCmul(a, amplitude);
         }
     }
