@@ -1,0 +1,64 @@
+# Build directories
+build/
+cmake-build-*/
+
+# Compiled objects
+*.o
+*.obj
+*.a
+*.lib
+*.so
+*.dylib
+
+# CUDA compiled files
+*.cubin
+*.ptx
+*.fatbin
+
+# Executables
+quantum_sim
+test_warmup
+test_statevector
+test_gates
+test_gate_algebra
+test_gpu_cpu_equivalence
+test_boundary
+benchmark_*
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# CMake
+CMakeCache.txt
+CMakeFiles/
+cmake_install.cmake
+Makefile
+compile_commands.json
+
+# Google Test
+_deps/
+
+# Profiling
+*.nsys-rep
+*.ncu-rep
+*.nvvp
+*.qdrep
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+.Python
+*.egg-info/
+.eggs/
+venv/
+.venv/
+
