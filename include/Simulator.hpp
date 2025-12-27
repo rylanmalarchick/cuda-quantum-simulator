@@ -49,7 +49,8 @@ private:
     
     // Kernel launch helpers
     void launchSingleQubitGate(GateType type, int target, double param = 0.0);
-    void launchTwoQubitGate(GateType type, int qubit1, int qubit2);
+    void launchTwoQubitGate(GateType type, int qubit1, int qubit2, double param = 0.0);
+    void launchThreeQubitGate(GateType type, int qubit1, int qubit2, int qubit3);
 };
 
 // ============================================================================

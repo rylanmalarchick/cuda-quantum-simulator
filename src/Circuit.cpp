@@ -33,6 +33,15 @@ void Circuit::validateQubitPair(int q1, int q2) const {
     }
 }
 
+void Circuit::validateQubitTriple(int q1, int q2, int q3) const {
+    validateQubit(q1);
+    validateQubit(q2);
+    validateQubit(q3);
+    if (q1 == q2 || q1 == q3 || q2 == q3) {
+        throw std::invalid_argument("Three-qubit gate requires three distinct qubits");
+    }
+}
+
 namespace {
     void validateAngle(double theta) {
         if (std::isnan(theta) || std::isinf(theta)) {
@@ -128,6 +137,26 @@ Circuit& Circuit::swap(int qubit1, int qubit2) {
     return *this;
 }
 
+Circuit& Circuit::cry(int control, int target, double theta) {
+    validateQubitPair(control, target);
+    validateAngle(theta);
+    gates_.emplace_back(GateType::CRY, control, target, theta);
+    return *this;
+}
+
+Circuit& Circuit::crz(int control, int target, double theta) {
+    validateQubitPair(control, target);
+    validateAngle(theta);
+    gates_.emplace_back(GateType::CRZ, control, target, theta);
+    return *this;
+}
+
+Circuit& Circuit::toffoli(int control1, int control2, int target) {
+    validateQubitTriple(control1, control2, target);
+    gates_.emplace_back(GateType::Toffoli, control1, control2, target);
+    return *this;
+}
+
 size_t Circuit::getDepth() const {
     if (gates_.empty()) return 0;
     
@@ -166,7 +195,10 @@ std::string Circuit::toString() const {
             case GateType::Rz: return "Rz";
             case GateType::CNOT: return "CNOT";
             case GateType::CZ: return "CZ";
+            case GateType::CRY: return "CRY";
+            case GateType::CRZ: return "CRZ";
             case GateType::SWAP: return "SWAP";
+            case GateType::Toffoli: return "Toffoli";
             default: return "?";
         }
     };
@@ -178,7 +210,10 @@ std::string Circuit::toString() const {
             if (j > 0) oss << ", ";
             oss << g.qubits[j];
         }
-        if (g.type == GateType::Rx || g.type == GateType::Ry || g.type == GateType::Rz) {
+        bool has_param = (g.type == GateType::Rx || g.type == GateType::Ry || 
+                          g.type == GateType::Rz || g.type == GateType::CRY ||
+                          g.type == GateType::CRZ);
+        if (has_param) {
             oss << ", " << g.parameter;
         }
         oss << ")\n";

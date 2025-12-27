@@ -55,8 +55,22 @@ __global__ void applyCNOT(cuDoubleComplex* state, int n_qubits, int control, int
 // Controlled-Z
 __global__ void applyCZ(cuDoubleComplex* state, int n_qubits, int control, int target);
 
+// Controlled-Ry (parameterized)
+__global__ void applyCRY(cuDoubleComplex* state, int n_qubits, int control, int target, double theta);
+
+// Controlled-Rz (parameterized)
+__global__ void applyCRZ(cuDoubleComplex* state, int n_qubits, int control, int target, double theta);
+
 // SWAP
 __global__ void applySWAP(cuDoubleComplex* state, int n_qubits, int qubit1, int qubit2);
+
+// ============================================================================
+// Three-Qubit Gates
+// ============================================================================
+
+// Toffoli (CCX) - Controlled-Controlled-X
+__global__ void applyToffoli(cuDoubleComplex* state, int n_qubits, 
+                              int control1, int control2, int target);
 
 // ============================================================================
 // Helper Functions

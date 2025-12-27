@@ -33,7 +33,9 @@ void Simulator::applyGate(const GateOp& gate) {
     if (gate.qubits.size() == 1) {
         launchSingleQubitGate(gate.type, gate.qubits[0], gate.parameter);
     } else if (gate.qubits.size() == 2) {
-        launchTwoQubitGate(gate.type, gate.qubits[0], gate.qubits[1]);
+        launchTwoQubitGate(gate.type, gate.qubits[0], gate.qubits[1], gate.parameter);
+    } else if (gate.qubits.size() == 3) {
+        launchThreeQubitGate(gate.type, gate.qubits[0], gate.qubits[1], gate.qubits[2]);
     }
 }
 
@@ -88,7 +90,7 @@ void Simulator::launchSingleQubitGate(GateType type, int target, double param) {
     CUDA_CHECK(cudaDeviceSynchronize());
 }
 
-void Simulator::launchTwoQubitGate(GateType type, int qubit1, int qubit2) {
+void Simulator::launchTwoQubitGate(GateType type, int qubit1, int qubit2, double param) {
     int n_qubits = state_.getNumQubits();
     size_t n_states = 1ULL << n_qubits;
     
@@ -104,11 +106,38 @@ void Simulator::launchTwoQubitGate(GateType type, int qubit1, int qubit2) {
         case GateType::CZ:
             applyCZ<<<blocks, threads>>>(d_state, n_qubits, qubit1, qubit2);
             break;
+        case GateType::CRY:
+            applyCRY<<<blocks, threads>>>(d_state, n_qubits, qubit1, qubit2, param);
+            break;
+        case GateType::CRZ:
+            applyCRZ<<<blocks, threads>>>(d_state, n_qubits, qubit1, qubit2, param);
+            break;
         case GateType::SWAP:
             applySWAP<<<blocks, threads>>>(d_state, n_qubits, qubit1, qubit2);
             break;
         default:
             throw std::runtime_error("Unknown two-qubit gate type");
+    }
+    
+    CUDA_CHECK_LAST_ERROR();
+    CUDA_CHECK(cudaDeviceSynchronize());
+}
+
+void Simulator::launchThreeQubitGate(GateType type, int qubit1, int qubit2, int qubit3) {
+    int n_qubits = state_.getNumQubits();
+    size_t n_states = 1ULL << n_qubits;
+    
+    int threads = cuda_config::DEFAULT_BLOCK_SIZE;
+    int blocks = calcBlocks(n_states, threads);
+    
+    cuDoubleComplex* d_state = state_.devicePtr();
+    
+    switch (type) {
+        case GateType::Toffoli:
+            applyToffoli<<<blocks, threads>>>(d_state, n_qubits, qubit1, qubit2, qubit3);
+            break;
+        default:
+            throw std::runtime_error("Unknown three-qubit gate type");
     }
     
     CUDA_CHECK_LAST_ERROR();

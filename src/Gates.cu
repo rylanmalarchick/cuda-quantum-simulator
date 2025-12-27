@@ -310,4 +310,98 @@ __global__ void applySWAP(cuDoubleComplex* state, int n_qubits, int qubit1, int 
     }
 }
 
+// ============================================================================
+// Controlled Rotation Gates
+// ============================================================================
+
+__global__ void applyCRY(cuDoubleComplex* state, int n_qubits, int control, int target, double theta) {
+    size_t idx = blockIdx.x * blockDim.x + threadIdx.x;
+    size_t n_states = 1ULL << n_qubits;
+    
+    if (idx < n_states) {
+        // Only act when control is 1 and target is 0 (to avoid processing pairs twice)
+        bool control_is_1 = (idx >> control) & 1;
+        bool target_is_0 = !((idx >> target) & 1);
+        
+        if (control_is_1 && target_is_0) {
+            size_t partner = idx ^ (1ULL << target);
+            
+            // Ry(θ) = [[cos(θ/2), -sin(θ/2)], [sin(θ/2), cos(θ/2)]]
+            double c = cos(theta / 2.0);
+            double s = sin(theta / 2.0);
+            
+            cuDoubleComplex a0 = state[idx];      // target=0
+            cuDoubleComplex a1 = state[partner];  // target=1
+            
+            state[idx] = make_cuDoubleComplex(
+                c * cuCreal(a0) - s * cuCreal(a1),
+                c * cuCimag(a0) - s * cuCimag(a1)
+            );
+            state[partner] = make_cuDoubleComplex(
+                s * cuCreal(a0) + c * cuCreal(a1),
+                s * cuCimag(a0) + c * cuCimag(a1)
+            );
+        }
+    }
+}
+
+__global__ void applyCRZ(cuDoubleComplex* state, int n_qubits, int control, int target, double theta) {
+    size_t idx = blockIdx.x * blockDim.x + threadIdx.x;
+    size_t n_states = 1ULL << n_qubits;
+    
+    if (idx < n_states) {
+        // Only act when control is 1
+        bool control_is_1 = (idx >> control) & 1;
+        
+        if (control_is_1) {
+            bool target_is_1 = (idx >> target) & 1;
+            
+            // Rz(θ) = [[e^(-iθ/2), 0], [0, e^(iθ/2)]]
+            double half_theta = theta / 2.0;
+            double c = cos(half_theta);
+            double s = sin(half_theta);
+            
+            cuDoubleComplex a = state[idx];
+            
+            if (target_is_1) {
+                // e^(iθ/2) = cos(θ/2) + i*sin(θ/2)
+                state[idx] = make_cuDoubleComplex(
+                    c * cuCreal(a) - s * cuCimag(a),
+                    c * cuCimag(a) + s * cuCreal(a)
+                );
+            } else {
+                // e^(-iθ/2) = cos(θ/2) - i*sin(θ/2)
+                state[idx] = make_cuDoubleComplex(
+                    c * cuCreal(a) + s * cuCimag(a),
+                    c * cuCimag(a) - s * cuCreal(a)
+                );
+            }
+        }
+    }
+}
+
+// ============================================================================
+// Three-Qubit Gates
+// ============================================================================
+
+__global__ void applyToffoli(cuDoubleComplex* state, int n_qubits,
+                              int control1, int control2, int target) {
+    size_t idx = blockIdx.x * blockDim.x + threadIdx.x;
+    size_t n_states = 1ULL << n_qubits;
+    
+    if (idx < n_states) {
+        // Only act when both controls are 1 and target is 0 (to avoid swapping twice)
+        bool c1_is_1 = (idx >> control1) & 1;
+        bool c2_is_1 = (idx >> control2) & 1;
+        bool target_is_0 = !((idx >> target) & 1);
+        
+        if (c1_is_1 && c2_is_1 && target_is_0) {
+            size_t partner = idx ^ (1ULL << target);
+            cuDoubleComplex tmp = state[idx];
+            state[idx] = state[partner];
+            state[partner] = tmp;
+        }
+    }
+}
+
 } // namespace qsim

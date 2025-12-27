@@ -247,3 +247,137 @@ TEST_F(GateTest, HadamardAllQubits) {
         EXPECT_NEAR(probs[i], expected, EPSILON);
     }
 }
+
+// ============================================================================
+// Advanced Gates (Toffoli, CRY, CRZ)
+// ============================================================================
+
+TEST_F(GateTest, ToffoliGate_BothControlsOn) {
+    // Toffoli flips target when both controls are 1
+    // For 3 qubits with x(0).x(1): creates state with q0=1, q1=1, q2=0
+    // In our bit ordering: index = q0 + 2*q1 + 4*q2 = 1 + 2 = 3 for |110⟩
+    // After Toffoli(0,1,2): target q2 flips → q2=1, index = 1 + 2 + 4 = 7
+    Simulator sim(3);
+    Circuit c(3);
+    c.x(0).x(1).toffoli(0, 1, 2);
+    sim.run(c);
+    
+    auto state = sim.getStateVector();
+    // Result should be at index 7
+    std::vector<std::complex<double>> expected(8, {0, 0});
+    expected[7] = {1, 0};
+    expectStateEquals(state, expected);
+}
+
+TEST_F(GateTest, ToffoliGate_OneControlOff) {
+    // Toffoli does nothing when only one control is 1
+    // x(0) creates q0=1, others 0 → index 1
+    Simulator sim(3);
+    Circuit c(3);
+    c.x(0).toffoli(0, 1, 2);
+    sim.run(c);
+    
+    auto state = sim.getStateVector();
+    // State stays at index 1
+    std::vector<std::complex<double>> expected(8, {0, 0});
+    expected[1] = {1, 0};
+    expectStateEquals(state, expected);
+}
+
+TEST_F(GateTest, ToffoliGate_NoControlsOn) {
+    // Toffoli does nothing when no controls are 1
+    Simulator sim(3);
+    Circuit c(3);
+    c.toffoli(0, 1, 2);  // |000⟩ stays |000⟩
+    sim.run(c);
+    
+    auto state = sim.getStateVector();
+    std::vector<std::complex<double>> expected(8, {0, 0});
+    expected[0] = {1, 0};
+    expectStateEquals(state, expected);
+}
+
+TEST_F(GateTest, ToffoliGate_SelfInverse) {
+    // Toffoli applied twice is identity
+    // x(0).x(1) → index 3, Toffoli → index 7, Toffoli → index 3
+    Simulator sim(3);
+    Circuit c(3);
+    c.x(0).x(1).toffoli(0, 1, 2).toffoli(0, 1, 2);
+    sim.run(c);
+    
+    auto state = sim.getStateVector();
+    // Should be back to index 3
+    std::vector<std::complex<double>> expected(8, {0, 0});
+    expected[3] = {1, 0};
+    expectStateEquals(state, expected);
+}
+
+TEST_F(GateTest, CRYGate_ControlOff) {
+    // CRY does nothing when control is 0
+    Simulator sim(2);
+    Circuit c(2);
+    c.cry(0, 1, M_PI);  // Control is 0, should do nothing
+    sim.run(c);
+    
+    auto state = sim.getStateVector();
+    expectStateEquals(state, {{1,0}, {0,0}, {0,0}, {0,0}});
+}
+
+TEST_F(GateTest, CRYGate_ControlOn) {
+    // CRY(π) with control=1 should flip target like Ry(π)
+    // x(0) sets q0=1 → index 1. CRY on q1 should flip q1.
+    // index 1 → index 3 (q0=1, q1=1)
+    Simulator sim(2);
+    Circuit c(2);
+    c.x(0).cry(0, 1, M_PI);
+    sim.run(c);
+    
+    auto state = sim.getStateVector();
+    // Should be at index 3
+    EXPECT_NEAR(std::abs(state[3]), 1.0, EPSILON);
+}
+
+TEST_F(GateTest, CRYGate_Superposition) {
+    // CRY(π/2) with control=1 creates superposition on target
+    // x(0) → index 1 (q0=1, q1=0)
+    // CRY(π/2) on q1: creates superposition between index 1 and 3
+    Simulator sim(2);
+    Circuit c(2);
+    c.x(0).cry(0, 1, M_PI / 2);
+    sim.run(c);
+    
+    auto probs = sim.getProbabilities();
+    // Should have probability in both index 1 and 3
+    EXPECT_NEAR(probs[1] + probs[3], 1.0, EPSILON);
+    EXPECT_GT(probs[1], 0.1);
+    EXPECT_GT(probs[3], 0.1);
+}
+
+TEST_F(GateTest, CRZGate_ControlOff) {
+    // CRZ does nothing when control is 0
+    // Start with |00⟩, apply H to q1 → superposition of index 0 and 2
+    // Then CRZ with control q0=0 should do nothing
+    Simulator sim(2);
+    Circuit c(2);
+    c.h(1).crz(0, 1, M_PI);  // Control q0 is 0
+    sim.run(c);
+    
+    auto state = sim.getStateVector();
+    // |0+⟩ = (|00⟩ + |01⟩)/√2 = (index 0 + index 2)/√2
+    expectStateEquals(state, {{INV_SQRT2,0}, {0,0}, {INV_SQRT2,0}, {0,0}});
+}
+
+TEST_F(GateTest, CRZGate_ControlOn) {
+    // CRZ(π) with control=1 applies Z-like phase to target
+    // x(0).h(1) creates (|10⟩ + |11⟩)/√2 = (index 1 + index 3)/√2
+    // CRZ(π) applies e^(±iπ/2) phases → (-i|10⟩ + i|11⟩)/√2
+    // Probabilities should still be 0.5 each
+    Simulator sim(2);
+    Circuit c(2);
+    c.x(0).h(1).crz(0, 1, M_PI);
+    sim.run(c);
+    
+    auto probs = sim.getProbabilities();
+    EXPECT_NEAR(probs[1], 0.5, EPSILON);  // index 1
+    EXPECT_NEAR(probs[3], 0.5, EPSILON);  // index 3
+}

@@ -20,7 +20,12 @@ enum class GateType {
     // Two-qubit gates
     CNOT,           // Controlled-X
     CZ,             // Controlled-Z
-    SWAP            // Swap
+    CRY,            // Controlled-Ry (parameterized)
+    CRZ,            // Controlled-Rz (parameterized)
+    SWAP,           // Swap
+    
+    // Three-qubit gates
+    Toffoli         // CCX (Controlled-Controlled-X)
 };
 
 /**
@@ -28,8 +33,8 @@ enum class GateType {
  */
 struct GateOp {
     GateType type;
-    std::vector<int> qubits;  // Target qubit(s): [target] or [control, target]
-    double parameter;          // For Rx, Ry, Rz (angle in radians)
+    std::vector<int> qubits;  // Target qubit(s): [target], [control, target], or [c1, c2, target]
+    double parameter;          // For Rx, Ry, Rz, CRY, CRZ (angle in radians)
     
     // Constructors for convenience
     GateOp(GateType t, int qubit) 
@@ -40,6 +45,12 @@ struct GateOp {
     
     GateOp(GateType t, int qubit1, int qubit2) 
         : type(t), qubits{qubit1, qubit2}, parameter(0.0) {}
+    
+    GateOp(GateType t, int qubit1, int qubit2, double param)
+        : type(t), qubits{qubit1, qubit2}, parameter(param) {}
+    
+    GateOp(GateType t, int qubit1, int qubit2, int qubit3)
+        : type(t), qubits{qubit1, qubit2, qubit3}, parameter(0.0) {}
 };
 
 /**
@@ -64,7 +75,11 @@ public:
     Circuit& cnot(int control, int target);
     Circuit& cx(int control, int target) { return cnot(control, target); }
     Circuit& cz(int control, int target);
+    Circuit& cry(int control, int target, double theta);
+    Circuit& crz(int control, int target, double theta);
     Circuit& swap(int qubit1, int qubit2);
+    Circuit& toffoli(int control1, int control2, int target);
+    Circuit& ccx(int control1, int control2, int target) { return toffoli(control1, control2, target); }
     
     // Access
     int getNumQubits() const { return num_qubits_; }
@@ -82,6 +97,7 @@ private:
     
     void validateQubit(int qubit) const;
     void validateQubitPair(int q1, int q2) const;
+    void validateQubitTriple(int q1, int q2, int q3) const;
 };
 
 // ============================================================================
