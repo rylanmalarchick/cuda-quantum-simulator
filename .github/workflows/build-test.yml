@@ -1,0 +1,67 @@
+name: Build and Test
+
+on:
+  push:
+    branches: [ main, master ]
+  pull_request:
+    branches: [ main, master ]
+
+jobs:
+  build-and-test:
+    runs-on: self-hosted
+    # Requires self-hosted runner with NVIDIA GPU
+    # See: https://docs.github.com/en/actions/hosting-your-own-runners
+
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Check CUDA availability
+      run: |
+        nvidia-smi
+        nvcc --version
+
+    - name: Configure CMake
+      run: |
+        mkdir -p build
+        cd build
+        cmake .. -DCMAKE_BUILD_TYPE=Release
+
+    - name: Build
+      run: |
+        cd build
+        make -j$(nproc)
+
+    - name: Run Tests
+      run: |
+        cd build
+        ctest --output-on-failure
+
+    - name: Run Demo
+      run: |
+        cd build
+        ./quantum_sim
+
+  # Optional: Run benchmarks (can be slow, only on main branch merges)
+  benchmark:
+    runs-on: self-hosted
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    needs: build-and-test
+
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Build
+      run: |
+        mkdir -p build && cd build
+        cmake .. -DCMAKE_BUILD_TYPE=Release
+        make -j$(nproc)
+
+    - name: Run Gate Benchmark
+      run: |
+        cd build
+        ./benchmark_gates
+
+    - name: Run Scaling Benchmark
+      run: |
+        cd build
+        ./benchmark_scaling
