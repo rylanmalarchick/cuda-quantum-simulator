@@ -118,4 +118,13 @@ __global__ void probabilityKernel(const cuDoubleComplex* state, double* probs, s
 // Parallel reduction to sum probabilities
 __global__ void sumReductionKernel(double* data, size_t size);
 
+// Calculate probability of |0⟩ for a specific qubit (for measurement)
+__global__ void qubitProbabilityKernel(const cuDoubleComplex* state, double* probs,
+                                        size_t size, int num_qubits, int qubit);
+
+// Collapse state after measurement
+__global__ void collapseStateKernel(cuDoubleComplex* state, size_t size,
+                                     int num_qubits, int qubit, int result,
+                                     double normalization_factor);
+
 } // namespace qsim

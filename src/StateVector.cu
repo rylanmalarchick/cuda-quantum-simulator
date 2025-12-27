@@ -5,6 +5,9 @@
 #include <curand.h>
 #include <stdexcept>
 #include <cstring>
+#include <random>
+#include <numeric>
+#include <algorithm>
 
 namespace qsim {
 
@@ -60,6 +63,57 @@ __global__ void sumReductionKernel(double* data, size_t size) {
     // Write result for this block
     if (tid == 0) {
         data[blockIdx.x] = sdata[0];
+    }
+}
+
+// ============================================================================
+// Measurement Kernels
+// ============================================================================
+
+/**
+ * Compute probability of measuring |0⟩ on a specific qubit.
+ * Sum |amplitude|^2 for all basis states where qubit is 0.
+ */
+__global__ void qubitProbabilityKernel(const cuDoubleComplex* state, double* probs,
+                                        size_t size, int num_qubits, int qubit) {
+    size_t idx = blockIdx.x * blockDim.x + threadIdx.x;
+    if (idx < size) {
+        // Big-endian: qubit 0 is MSB, so bit position is (num_qubits - 1 - qubit)
+        int bit_position = num_qubits - 1 - qubit;
+        int qubit_value = (idx >> bit_position) & 1;
+        
+        if (qubit_value == 0) {
+            double real = cuCreal(state[idx]);
+            double imag = cuCimag(state[idx]);
+            probs[idx] = real * real + imag * imag;
+        } else {
+            probs[idx] = 0.0;
+        }
+    }
+}
+
+/**
+ * Collapse state after measuring a qubit.
+ * Zero out amplitudes inconsistent with measurement result and renormalize.
+ */
+__global__ void collapseStateKernel(cuDoubleComplex* state, size_t size,
+                                     int num_qubits, int qubit, int result,
+                                     double normalization_factor) {
+    size_t idx = blockIdx.x * blockDim.x + threadIdx.x;
+    if (idx < size) {
+        // Big-endian: qubit 0 is MSB
+        int bit_position = num_qubits - 1 - qubit;
+        int qubit_value = (idx >> bit_position) & 1;
+        
+        if (qubit_value != result) {
+            // Zero out amplitudes inconsistent with measurement
+            state[idx] = make_cuDoubleComplex(0.0, 0.0);
+        } else {
+            // Renormalize remaining amplitudes
+            double real = cuCreal(state[idx]) * normalization_factor;
+            double imag = cuCimag(state[idx]) * normalization_factor;
+            state[idx] = make_cuDoubleComplex(real, imag);
+        }
     }
 }
 
@@ -198,15 +252,87 @@ void StateVector::assertNormalized(double tolerance) const {
 }
 
 int StateVector::measure(int qubit) {
-    // TODO: Implement measurement with state collapse
-    (void)qubit;
-    throw std::runtime_error("Measurement not yet implemented");
+    if (qubit < 0 || qubit >= num_qubits_) {
+        throw std::invalid_argument(
+            "Qubit index " + std::to_string(qubit) + " out of range [0, " + 
+            std::to_string(num_qubits_ - 1) + "]"
+        );
+    }
+    
+    // Allocate temporary array for probabilities
+    CudaMemory<double> d_probs(size_);
+    
+    int threads = cuda_config::DEFAULT_BLOCK_SIZE;
+    int blocks = calcBlocks(size_, threads);
+    
+    // Calculate probability of measuring |0⟩ on this qubit
+    qubitProbabilityKernel<<<blocks, threads>>>(d_state_, d_probs.get(), 
+                                                  size_, num_qubits_, qubit);
+    CUDA_CHECK_LAST_ERROR();
+    CUDA_CHECK(cudaDeviceSynchronize());
+    
+    // Sum probabilities on host (could optimize with GPU reduction)
+    std::vector<double> h_probs(size_);
+    d_probs.copyToHost(h_probs.data(), size_);
+    
+    double prob_zero = 0.0;
+    for (size_t i = 0; i < size_; ++i) {
+        prob_zero += h_probs[i];
+    }
+    
+    // Random measurement outcome
+    std::random_device rd;
+    std::mt19937 rng(rd());
+    std::uniform_real_distribution<double> dist(0.0, 1.0);
+    double r = dist(rng);
+    
+    int result = (r < prob_zero) ? 0 : 1;
+    
+    // Calculate normalization factor
+    double prob_result = (result == 0) ? prob_zero : (1.0 - prob_zero);
+    if (prob_result < 1e-15) {
+        throw std::runtime_error(
+            "Measurement result " + std::to_string(result) + 
+            " has zero probability - state may be corrupted"
+        );
+    }
+    double normalization_factor = 1.0 / std::sqrt(prob_result);
+    
+    // Collapse the state
+    collapseStateKernel<<<blocks, threads>>>(d_state_, size_, num_qubits_, 
+                                               qubit, result, normalization_factor);
+    CUDA_CHECK_LAST_ERROR();
+    CUDA_CHECK(cudaDeviceSynchronize());
+    
+    return result;
 }
 
 std::vector<int> StateVector::sample(int n_shots) {
-    // TODO: Implement sampling
-    (void)n_shots;
-    throw std::runtime_error("Sampling not yet implemented");
+    if (n_shots <= 0) {
+        throw std::invalid_argument("n_shots must be positive");
+    }
+    
+    // Get probability distribution (does not modify state)
+    auto probs = getProbabilities();
+    size_t n_states = probs.size();
+    
+    // Build cumulative distribution
+    std::vector<double> cumulative(n_states);
+    std::partial_sum(probs.begin(), probs.end(), cumulative.begin());
+    
+    // Sample from distribution
+    std::random_device rd;
+    std::mt19937 rng(rd());
+    std::uniform_real_distribution<double> dist(0.0, 1.0);
+    
+    std::vector<int> samples(n_shots);
+    for (int i = 0; i < n_shots; ++i) {
+        double r = dist(rng);
+        auto it = std::lower_bound(cumulative.begin(), cumulative.end(), r);
+        samples[i] = static_cast<int>(it - cumulative.begin());
+    }
+    
+    return samples;
 }
 
 } // namespace qsim

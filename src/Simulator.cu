@@ -147,9 +147,7 @@ std::vector<int> Simulator::sample(int n_shots) {
 }
 
 int Simulator::measureQubit(int qubit) {
-    // TODO: Implement single-qubit measurement with state collapse
-    (void)qubit;
-    throw std::runtime_error("measureQubit not yet implemented");
+    return state_.measure(qubit);
 }
 
 // ============================================================================
