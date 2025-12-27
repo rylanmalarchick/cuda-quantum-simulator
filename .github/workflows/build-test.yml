@@ -8,9 +8,9 @@ on:
 
 jobs:
   build-and-test:
-    runs-on: self-hosted
-    # Requires self-hosted runner with NVIDIA GPU
-    # See: https://docs.github.com/en/actions/hosting-your-own-runners
+    runs-on: [self-hosted, gpu, cuda]
+    # Requires self-hosted runner with NVIDIA GPU and CUDA toolkit
+    # Setup: https://docs.github.com/en/actions/hosting-your-own-runners
 
     steps:
     - uses: actions/checkout@v4
@@ -41,10 +41,10 @@ jobs:
         cd build
         ./quantum_sim
 
-  # Optional: Run benchmarks (can be slow, only on main branch merges)
+  # Run benchmarks on main branch merges only (benchmarks can be slow)
   benchmark:
-    runs-on: self-hosted
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: [self-hosted, gpu, cuda]
+    if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master')
     needs: build-and-test
 
     steps:
@@ -65,3 +65,8 @@ jobs:
       run: |
         cd build
         ./benchmark_scaling
+
+    - name: Run Kernel Launch Overhead Benchmark
+      run: |
+        cd build
+        ./benchmark_hadamard
