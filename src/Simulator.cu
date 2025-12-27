@@ -87,7 +87,8 @@ void Simulator::launchSingleQubitGate(GateType type, int target, double param) {
     }
     
     CUDA_CHECK_LAST_ERROR();
-    CUDA_CHECK(cudaDeviceSynchronize());
+    // Note: No cudaDeviceSynchronize() here - CUDA streams serialize operations
+    // automatically. Sync only when reading results (getStateVector, sample, etc.)
 }
 
 void Simulator::launchTwoQubitGate(GateType type, int qubit1, int qubit2, double param) {
@@ -120,7 +121,8 @@ void Simulator::launchTwoQubitGate(GateType type, int qubit1, int qubit2, double
     }
     
     CUDA_CHECK_LAST_ERROR();
-    CUDA_CHECK(cudaDeviceSynchronize());
+    // Note: No cudaDeviceSynchronize() here - CUDA streams serialize operations
+    // automatically. Sync only when reading results (getStateVector, sample, etc.)
 }
 
 void Simulator::launchThreeQubitGate(GateType type, int qubit1, int qubit2, int qubit3) {
@@ -141,7 +143,8 @@ void Simulator::launchThreeQubitGate(GateType type, int qubit1, int qubit2, int 
     }
     
     CUDA_CHECK_LAST_ERROR();
-    CUDA_CHECK(cudaDeviceSynchronize());
+    // Note: No cudaDeviceSynchronize() here - CUDA streams serialize operations
+    // automatically. Sync only when reading results (getStateVector, sample, etc.)
 }
 
 std::vector<std::complex<double>> Simulator::getStateVector() const {

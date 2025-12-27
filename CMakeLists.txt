@@ -116,3 +116,6 @@ target_link_libraries(benchmark_gates quantum_sim_lib cudart)
 
 add_executable(benchmark_scaling benchmarks/benchmark_scaling.cu)
 target_link_libraries(benchmark_scaling quantum_sim_lib cudart)
+
+add_executable(benchmark_hadamard benchmarks/benchmark_hadamard.cu)
+target_link_libraries(benchmark_hadamard quantum_sim_lib cudart)
