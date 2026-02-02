@@ -13,7 +13,7 @@ A high-performance quantum state vector simulator implemented in CUDA C++. This 
 - **Measurement**: Single-qubit measurement with state collapse and multi-shot sampling
 - **Fluent Circuit API**: Chainable gate operations with input validation
 - **RAII Memory Management**: Safe GPU memory handling with automatic cleanup
-- **Validated Against Industry Standards**: Cross-validated with Qiskit and Cirq
+- **Validated Implementation**: GPU results verified against CPU reference; gate definitions follow Qiskit/Cirq conventions
 - **Comprehensive Test Suite**: Unit tests using Google Test framework
 
 ## Benchmark Results
@@ -240,24 +240,34 @@ State: |000⟩ |001⟩ |010⟩ |011⟩ |100⟩ |101⟩ |110⟩ |111⟩
 
 ## Validation
 
-Cross-validated against Qiskit and Cirq for correctness:
+The simulator is validated through multiple approaches:
 
+**1. GPU vs CPU Equivalence (Primary Validation)**
+
+The C++ test suite verifies GPU kernels produce identical results to a CPU reference implementation:
 ```bash
-# Set up Python environment
-python -m venv .venv
-source .venv/bin/activate
-pip install -r validation/requirements.txt
-
-# Run validation
-python validation/validate_against_qiskit.py  # All tests pass
-python validation/validate_against_cirq.py    # All tests pass
+cd build && ./test_gpu_cpu_equivalence  # All tests pass
 ```
 
-Validation covers:
-- Bell state and GHZ states
+**2. Gate Algebra Tests**
+
+Mathematical identities verify correctness (H²=I, CNOT²=I, S²=Z, etc.):
+```bash
+cd build && ./test_gate_algebra  # All tests pass
+```
+
+**3. Convention Verification Scripts**
+
+Python scripts verify our gate definitions match Qiskit/Cirq conventions:
+```bash
+python validation/validate_against_qiskit.py
+python validation/validate_against_cirq.py
+```
+
+Test coverage includes:
 - All single-qubit gates (X, Y, Z, H, S, T, Rx, Ry, Rz)
 - All two-qubit gates (CNOT, CZ, SWAP)
-- Random deep circuits (20+ gates)
+- Bell states, GHZ states, random circuits up to 500 gates deep
 
 ## Testing
 
@@ -287,12 +297,12 @@ cd build && ctest --output-on-failure
 
 State vector size = 2^n × 16 bytes (double precision complex):
 - 20 qubits: 16 MB
-- 25 qubits: 512 MB  
-- 27 qubits: 2 GB (practical limit for 8GB GPU)
+- 25 qubits: 512 MB
+- 28 qubits: 4 GB (practical limit for 8GB GPU)
 
 ### Performance Characteristics
 
-- **Kernel launch overhead**: ~130ms for small qubit counts dominates execution
+- **CUDA initialization overhead**: First kernel launch includes JIT compilation and context setup
 - **Memory bandwidth bound**: Performance scales with state vector size at high qubit counts
 - **GPU advantage**: Emerges at 20+ qubits where parallelism outweighs overhead
 
