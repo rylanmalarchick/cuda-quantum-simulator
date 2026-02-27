@@ -48,6 +48,10 @@ jobs:
         cd build
         ./quantum_sim
 
+    - name: Valgrind Memory Check
+      run: |
+        ./valgrind.sh --no-build
+
   # Run benchmarks on main branch merges only (benchmarks can be slow)
   benchmark:
     runs-on: [self-hosted, gpu, cuda]

@@ -1,0 +1,199 @@
+# SPDX-License-Identifier: MIT
+# Copyright (c) 2024 Rylan Malarchick
+#
+# Valgrind suppression file for CUDA programs.
+#
+# CUDA programs produce known false positives in valgrind because:
+#   1. The NVIDIA kernel driver communicates via ioctl(0x30000001) which
+#      valgrind cannot instrument — all memory it touches appears uninitialized.
+#   2. The CUDA runtime intentionally keeps context memory alive for the
+#      process lifetime ("still reachable"), which is not a leak.
+#   3. curandState RNG initialization uses CUDA-internal memory paths.
+#
+# With this file, "definitely lost" and "indirectly lost" remain 0, which
+# is the correct definition of leak-free for a CUDA application.
+#
+# Usage:
+#   valgrind --suppressions=cuda.supp --leak-check=full \
+#            --show-leak-kinds=definite,indirect ./test_xxx
+
+# ── NVIDIA kernel driver ioctl ────────────────────────────────────────────────
+# The CUDA driver uses ioctl code 0x30000001 to communicate with the kernel
+# module. Valgrind cannot determine the data-direction of this ioctl, so it
+# marks all memory touched by the driver as potentially uninitialized.  Every
+# conditional branch inside the driver then becomes a "Conditional jump or
+# move depends on uninitialised value(s)" error.  All of these originate inside
+# libcuda.so / libnvidia-*.so, never in application code.
+
+{
+   nvidia_ioctl_uninit_1
+   Memcheck:Param
+   ioctl(generic)
+   obj:*/libcuda.so*
+}
+
+{
+   nvidia_ioctl_uninit_2
+   Memcheck:Param
+   ioctl(generic)
+   obj:*/libnvidia-*.so*
+}
+
+{
+   nvidia_cond_uninit_1
+   Memcheck:Cond
+   obj:*/libcuda.so*
+}
+
+{
+   nvidia_cond_uninit_2
+   Memcheck:Cond
+   obj:*/libnvidia-*.so*
+}
+
+{
+   nvidia_value_uninit_1
+   Memcheck:Value8
+   obj:*/libcuda.so*
+}
+
+{
+   nvidia_value_uninit_2
+   Memcheck:Value8
+   obj:*/libnvidia-*.so*
+}
+
+{
+   nvidia_value4_uninit_1
+   Memcheck:Value4
+   obj:*/libcuda.so*
+}
+
+{
+   nvidia_value4_uninit_2
+   Memcheck:Value4
+   obj:*/libnvidia-*.so*
+}
+
+# ── CUDA runtime (libcudart) ──────────────────────────────────────────────────
+# cudaGetDeviceProperties, cudaLaunchKernel, etc. propagate the uninitialized
+# status from the driver layer through internal bookkeeping structures.
+
+{
+   cudart_cond_uninit
+   Memcheck:Cond
+   obj:*/libcudart.so*
+}
+
+{
+   cudart_value_uninit
+   Memcheck:Value8
+   obj:*/libcudart.so*
+}
+
+{
+   cudart_value4_uninit
+   Memcheck:Value4
+   obj:*/libcudart.so*
+}
+
+{
+   cudart_param_ioctl
+   Memcheck:Param
+   ioctl(generic)
+   obj:*/libcudart.so*
+}
+
+# ── cuRAND ────────────────────────────────────────────────────────────────────
+{
+   curand_cond_uninit
+   Memcheck:Cond
+   obj:*/libcurand.so*
+}
+
+{
+   curand_value_uninit
+   Memcheck:Value8
+   obj:*/libcurand.so*
+}
+
+# ── cuStateVec / cuQuantum ────────────────────────────────────────────────────
+{
+   custatevec_cond_uninit
+   Memcheck:Cond
+   obj:*/libcustatevec.so*
+}
+
+{
+   custatevec_value_uninit
+   Memcheck:Value8
+   obj:*/libcustatevec.so*
+}
+
+# ── pthread internals used by CUDA context threads ────────────────────────────
+{
+   pthread_cond_uninit_cuda
+   Memcheck:Cond
+   fun:pthread_*
+   obj:*/libcuda.so*
+}
+
+# ── Reachable-but-not-leaked CUDA context memory ──────────────────────────────
+# The CUDA runtime allocates context structures at cuInit/cudaSetDevice time
+# and intentionally holds them for the process lifetime.  They show as
+# "still reachable" in valgrind — NOT a leak.  Suppress them so the summary
+# report stays uncluttered.
+
+{
+   cuda_context_reachable
+   Memcheck:Leak
+   match-leak-kinds: reachable
+   obj:*/libcuda.so*
+}
+
+{
+   cudart_context_reachable
+   Memcheck:Leak
+   match-leak-kinds: reachable
+   obj:*/libcudart.so*
+}
+
+{
+   nvidia_context_reachable
+   Memcheck:Leak
+   match-leak-kinds: reachable
+   obj:*/libnvidia-*.so*
+}
+
+# ── "Possibly lost" from CUDA driver thread stacks ────────────────────────────
+# Internal CUDA driver threads (e.g. progress thread, async copy engine) create
+# stacks that are reachable via thread handles; valgrind sometimes classifies
+# these as "possibly lost" when it cannot follow the indirect reference.
+
+{
+   cuda_possibly_lost
+   Memcheck:Leak
+   match-leak-kinds: possible
+   obj:*/libcuda.so*
+}
+
+{
+   cudart_possibly_lost
+   Memcheck:Leak
+   match-leak-kinds: possible
+   obj:*/libcudart.so*
+}
+
+{
+   nvidia_possibly_lost
+   Memcheck:Leak
+   match-leak-kinds: possible
+   obj:*/libnvidia-*.so*
+}
+
+{
+   curand_possibly_lost
+   Memcheck:Leak
+   match-leak-kinds: possible
+   obj:*/libcurand.so*
+}
